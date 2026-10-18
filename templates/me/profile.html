@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}আমার প্রোফাইল{% endblock %}
 {% block content %}
-<div class="topbar"><h1>আমার প্রোফাইল</h1><a class="btn primary" href="{{ url_for('my_profile_edit') }}">নাম, ঠিকানা ও ব্যাংক তথ্য হালনাগাদ</a></div>
+<div class="topbar"><h1>আমার প্রোফাইল</h1><a class="btn primary" href="{{ url_for('my_profile_edit') }}">নাম, পদবি, ঠিকানা ও ব্যাংক তথ্য হালনাগাদ</a></div>
 {% include "_profile.html" %}
-<p class="hint">গ্রেড, মূল বেতন, পদবি, শাখা, জন্মতারিখ বা যোগদানের তারিখ ভুল থাকলে সংশোধনের জন্য হিসাব শাখায় যোগাযোগ করুন।</p>
+<p class="hint">গ্রেড, মূল বেতন, শাখা, জন্মতারিখ বা যোগদানের তারিখ ভুল থাকলে সংশোধনের জন্য হিসাব শাখায় যোগাযোগ করুন।</p>
 {% endblock %}

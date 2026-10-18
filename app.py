@@ -166,8 +166,9 @@ OVERRIDE_FIELDS = ["ovr_house_rent", "ovr_medical", "ovr_education", "ovr_tiffin
 FLAG_FIELDS = ["govt_quarter", "inc_2026", "inc_2027", "pf", "tiffin", "transport", "wash"]
 SPECIAL_RATES = ["auto", "0.10", "0.15", "0"]
 
-# কর্মচারী নিজে যেসব তথ্য বদলাতে পারবেন (বেতন সংক্রান্ত কিছু নয়)
-SELF_EDIT_FIELDS = [("name_bn", "নাম (বাংলায়)"), ("name_en", "নাম (ইংরেজিতে)"), ("father_name", "পিতার নাম"),
+# কর্মচারী নিজে যেসব তথ্য বদলাতে পারবেন (বেতন সংক্রান্ত কিছু নয়; পদবি দিয়ে বেতন হিসাব হয় না, গ্রেড দিয়ে হয়)
+SELF_EDIT_FIELDS = [("name_bn", "নাম (বাংলায়)"), ("name_en", "নাম (ইংরেজিতে)"), ("designation", "পদবি"),
+                    ("father_name", "পিতার নাম"),
                     ("mother_name", "মাতার নাম"), ("nid", "জাতীয় পরিচয়পত্র নং"), ("mobile", "মোবাইল"),
                     ("email", "ইমেইল"), ("address", "ঠিকানা"), ("bank_name", "ব্যাংকের নাম"),
                     ("bank_branch", "ব্যাংক শাখা"), ("account_no", "হিসাব নম্বর"), ("tin", "টিআইএন")]

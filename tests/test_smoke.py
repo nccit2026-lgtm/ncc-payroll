@@ -116,11 +116,12 @@ def test_full_flow():
     assert emp_c.get(f"/admin/employees/{emp_id}/edit").status_code == 403
     assert emp_c.get("/me/profile/edit").status_code == 200
     post(emp_c, "/me/profile/edit", {"name_bn": "পরীক্ষা কর্মচারী", "account_no": "123456789", "basic": "99999",
-                                     "grade": "1", "mobile": "01711111111"})
+                                     "grade": "1", "mobile": "01711111111", "designation": "উচ্চমান সহকারী"})
     with app.app_context():
         e = get_db().execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone()
         assert (e["account_no"], e["mobile"], e["basic"], e["grade"]) == ("123456789", "01711111111", 19810, 13)
-        assert get_db().execute("SELECT COUNT(*) FROM employee_changes WHERE employee_id = ?", (emp_id,)).fetchone()[0] == 2
+        assert e["designation"] == "উচ্চমান সহকারী"
+        assert get_db().execute("SELECT COUNT(*) FROM employee_changes WHERE employee_id = ?", (emp_id,)).fetchone()[0] == 3
     assert "123456789" in c.get("/admin").get_data(as_text=True)  # অ্যাডমিন ড্যাশবোর্ডে পরিবর্তন দেখা যায়
 
     post(c, f"/admin/payroll/{run_id}/finalize")

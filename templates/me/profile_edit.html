@@ -2,7 +2,7 @@
 {% block title %}প্রোফাইল হালনাগাদ{% endblock %}
 {% block content %}
 <div class="topbar"><h1>প্রোফাইল হালনাগাদ</h1><a class="btn" href="{{ url_for('my_profile') }}">← প্রোফাইলে ফিরুন</a></div>
-<div class="flash warn">শুধু ব্যক্তিগত ও ব্যাংক তথ্য এখানে বদলানো যায়। বেতন, গ্রেড, পদবি বা তারিখ সংক্রান্ত সংশোধনের জন্য হিসাব শাখায় যোগাযোগ করুন। প্রতিটি পরিবর্তন হিসাব শাখা দেখতে পায়।</div>
+<div class="flash warn">নাম, পদবি, ব্যক্তিগত ও ব্যাংক তথ্য এখানে বদলানো যায়। বেতন, গ্রেড, শাখা বা তারিখ সংক্রান্ত সংশোধনের জন্য হিসাব শাখায় যোগাযোগ করুন। প্রতিটি পরিবর্তন হিসাব শাখা দেখতে পায়।</div>
 <form class="card" method="post" style="max-width:760px">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <div class="grid g2">
