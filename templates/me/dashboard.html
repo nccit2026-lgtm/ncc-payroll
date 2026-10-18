@@ -12,8 +12,10 @@
   <div class="stat"><div class="label">{{ year|bn }} সালে মোট প্রাপ্তি</div><div class="value">৳ {{ ytd|taka }}</div></div>
   <div class="stat"><div class="label">বর্তমান মূল বেতন</div><div class="value">৳ {{ emp.basic|taka }}</div><div class="sub">{% if emp.grade %}গ্রেড-{{ emp.grade|bn }}{% endif %}</div></div>
 </div>
+{% include "_fixation.html" %}
 <div class="card"><h2>মাসভিত্তিক নিট বেতন</h2>{{ bar_chart(chart, 'net', 'এখনো কোনো বেতনের রেকর্ড নেই।') }}</div>
 <h2>কোন মাসে কত বেতন পেয়েছেন</h2>
+<p class="hint" style="margin-top:-6px">হিসাব শাখা প্রতি মাসের বেতন শিট চূড়ান্ত করার পর এখানে দেখা যাবে।</p>
 {% set show_status = false %}
 {% include "_history.html" %}
 {% endblock %}

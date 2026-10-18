@@ -18,13 +18,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
 </head>
 <body>
 {% if user %}
 <div class="shell">
   <aside class="side">
     <div class="logo">
-      <div class="mark">না</div>
+      <img class="mark" src="{{ url_for('static', filename='logo.png') }}" alt="নারায়ণগঞ্জ সিটি কর্পোরেশনের লোগো">
       <div><b>{{ settings.office_name }}</b><span>বেতন ব্যবস্থাপনা</span></div>
     </div>
     {% set ep = request.endpoint or '' %}
@@ -34,7 +35,7 @@
         <a href="{{ url_for('employees') }}" class="{{ 'active' if ep.startswith('employee') }}">{{ icon('users') }}কর্মচারী</a>
         <a href="{{ url_for('payroll_list') }}" class="{{ 'active' if ep.startswith('payroll') or ep.startswith('payslip') }}">{{ icon('sheet') }}মাসিক বেতন শিট</a>
         <a href="{{ url_for('reports') }}" class="{{ 'active' if ep.startswith('reports') }}">{{ icon('chart') }}মাসভিত্তিক হিসাব</a>
-        <a href="{{ url_for('payscale') }}" class="{{ 'active' if ep == 'payscale' }}">{{ icon('scale') }}বেতন স্কেল ও ভাতা</a>
+        <a href="{{ url_for('payscale_page') }}" class="{{ 'active' if ep == 'payscale_page' }}">{{ icon('scale') }}বেতন স্কেল ও ভাতা</a>
       {% else %}
         <a href="{{ url_for('my_dashboard') }}" class="{{ 'active' if ep == 'my_dashboard' }}">{{ icon('home') }}আমার বেতন</a>
         <a href="{{ url_for('my_profile') }}" class="{{ 'active' if ep == 'my_profile' }}">{{ icon('user') }}আমার প্রোফাইল</a>

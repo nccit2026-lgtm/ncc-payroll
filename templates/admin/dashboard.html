@@ -14,6 +14,7 @@
   </div>
 </div>
 
+<div class="flash ok" style="margin-bottom:14px">এ মাসের বেতন ধাপ: <b>{{ phase[0] }}</b> — {{ phase[1] }}</div>
 <div class="grid g4" style="margin-bottom:18px">
   <div class="stat"><div class="label">সক্রিয় কর্মচারী</div><div class="value">{{ (stats.active or 0)|bn }} জন</div><div class="sub">মোট নিবন্ধিত {{ stats.total|bn }} জন</div></div>
   <div class="stat"><div class="label">মোট মাসিক মূল বেতন</div><div class="value">৳ {{ stats.basic_sum|taka }}</div><div class="sub">সক্রিয় কর্মচারীদের বর্তমান মূল বেতন</div></div>
@@ -43,4 +44,14 @@
     {% else %}<p class="muted">কোনো কর্মচারী নেই। <a href="{{ url_for('employees_import') }}">Excel থেকে ইমপোর্ট করুন</a></p>{% endif %}
   </div>
 </div>
+{% if changes %}
+<div class="card">
+  <h2>কর্মচারীদের নিজের করা সাম্প্রতিক পরিবর্তন</h2>
+  <p class="hint" style="margin-top:-8px">বিশেষ করে ব্যাংক হিসাব নম্বরের পরিবর্তন বেতন দেওয়ার আগে যাচাই করুন।</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>সময়</th><th>কর্মচারী</th><th>তথ্য</th><th>আগে</th><th>এখন</th></tr></thead>
+    <tbody>{% for c in changes %}<tr><td class="small">{{ c.changed_at|bn }}</td><td><a href="{{ url_for('employee_view', emp_id=c.employee_id) }}">{{ c.name_bn }}</a> <span class="small muted">{{ c.code }}</span></td><td>{{ c.field }}</td><td class="muted">{{ c.old_value or '—' }}</td><td><b>{{ c.new_value or '—' }}</b></td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
 {% endblock %}

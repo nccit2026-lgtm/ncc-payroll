@@ -21,12 +21,13 @@
       <tr><th>পদবি</th><td>{{ emp.designation or '—' }}</td></tr>
       <tr><th>শাখা</th><td>{{ emp.department or '—' }}</td></tr>
       <tr><th>চাকরির ধরন</th><td>{{ emp.employment_type or '—' }}</td></tr>
-      <tr><th>গ্রেড / মূল বেতন</th><td>{% if emp.grade %}গ্রেড-{{ emp.grade|bn }}, {% endif %}{{ emp.basic|taka }} টাকা</td></tr>
+      <tr><th>গ্রেড / মূল বেতন (৩০-০৬-২০২৬)</th><td>{% if emp.grade %}গ্রেড-{{ emp.grade|bn }}, {% endif %}{{ emp.basic|taka }} টাকা</td></tr>
       <tr><th>যোগদান</th><td>{{ emp.join_date|bndate if emp.join_date else '—' }}</td></tr>
-      <tr><th>পিআরএল</th><td>{{ emp.prl_date|bndate if emp.prl_date else '—' }}</td></tr>
+      <tr><th>অবসর-উত্তর ছুটি (PRL)</th><td>{% if emp.prl_date %}{{ emp.prl_date|bndate }}{% elif prl %}{{ prl|string|bndate }} <span class="small muted">(৫৯ বছর পূর্ণ, জন্মতারিখ থেকে)</span>{% else %}—{% endif %}</td></tr>
       <tr><th>ব্যাংক</th><td>{{ emp.bank_name or '—' }}{% if emp.bank_branch %}, {{ emp.bank_branch }}{% endif %}</td></tr>
       <tr><th>হিসাব নম্বর</th><td>{{ emp.account_no|bn if emp.account_no else '—' }}</td></tr>
-      <tr><th>জিপিএফ নং / টিআইএন</th><td>{{ emp.gpf_no or '—' }} / {{ emp.tin or '—' }}</td></tr>
+      <tr><th>ভবিষ্য তহবিল (PF)</th><td>{{ 'প্রযোজ্য' if emp.pf else 'প্রযোজ্য নয়' }}</td></tr>
+      <tr><th>টিআইএন</th><td>{{ emp.tin or '—' }}</td></tr>
     </table>
   </div>
 </div>

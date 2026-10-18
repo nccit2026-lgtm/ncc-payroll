@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
--- জাতীয় বেতন স্কেল: প্রতিটি গ্রেডের প্রারম্ভিক ও সর্বোচ্চ মূল বেতন
+-- পুরনো সংস্করণের টেবিল (এখন ব্যবহৃত হয় না; বেতন স্কেল payscale.py তে)
 CREATE TABLE IF NOT EXISTS pay_grades (
     grade       INTEGER PRIMARY KEY,
     start_basic INTEGER NOT NULL,
@@ -31,11 +31,19 @@ CREATE TABLE IF NOT EXISTS employees (
     join_date        TEXT,
     prl_date         TEXT,
     status           TEXT DEFAULT 'active',         -- active / inactive
-    grade            INTEGER REFERENCES pay_grades(grade),
-    basic            INTEGER NOT NULL DEFAULT 0,
+    grade            INTEGER,
+    basic            REAL    NOT NULL DEFAULT 0,    -- ৩০-০৬-২০২৬ এর মূল বেতন (২০১৫ স্কেল)
     children         INTEGER NOT NULL DEFAULT 0,    -- শিক্ষা সহায়ক ভাতার জন্য
     govt_quarter     INTEGER NOT NULL DEFAULT 0,    -- সরকারি বাসায় থাকলে বাড়ি ভাড়া ভাতা নেই
-    gpf_pct          REAL    NOT NULL DEFAULT 5,
+    gpf_pct          REAL    NOT NULL DEFAULT 0,    -- ব্যবহৃত হয় না (PF দেখুন)
+    inc_2026         INTEGER NOT NULL DEFAULT 1,    -- ০১-০৭-২০২৬ এ ইনক্রিমেন্ট প্রাপ্য
+    inc_2027         INTEGER NOT NULL DEFAULT 1,    -- ০১-০৭-২০২৭ এ ইনক্রিমেন্ট প্রাপ্য
+    new_basic_override REAL,                        -- আইবাস++/দপ্তরে ভিন্ন হলে ০১-০৭-২০২৬ এর মূল বেতন
+    pf               INTEGER NOT NULL DEFAULT 0,    -- ভবিষ্য তহবিল প্রযোজ্য
+    special_rate     TEXT    NOT NULL DEFAULT 'auto', -- মহার্ঘ ভাতা: auto / 0.10 / 0.15 / 0
+    tiffin           INTEGER NOT NULL DEFAULT 1,
+    transport        INTEGER NOT NULL DEFAULT 1,
+    wash             INTEGER NOT NULL DEFAULT 0,    -- ধোলাই ভাতা
     gpf_no           TEXT,
     tin              TEXT,
     bank_name        TEXT,
@@ -76,6 +84,7 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
     status            TEXT NOT NULL DEFAULT 'draft',   -- draft / final
     include_festival  INTEGER NOT NULL DEFAULT 0,
     include_boishakhi INTEGER NOT NULL DEFAULT 0,
+    include_arrears   INTEGER NOT NULL DEFAULT 0,
     note              TEXT,
     created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
     finalized_at      TEXT,
@@ -101,6 +110,13 @@ CREATE TABLE IF NOT EXISTS payslips (
     transport       INTEGER NOT NULL DEFAULT 0,
     festival        INTEGER NOT NULL DEFAULT 0,
     boishakhi       INTEGER NOT NULL DEFAULT 0,
+    mobile          REAL NOT NULL DEFAULT 0,
+    wash            REAL NOT NULL DEFAULT 0,
+    special         REAL NOT NULL DEFAULT 0,
+    pf_office       REAL NOT NULL DEFAULT 0,
+    pf_fund         REAL NOT NULL DEFAULT 0,
+    pf_own          REAL NOT NULL DEFAULT 0,
+    phase           TEXT,
     other_allowance TEXT NOT NULL DEFAULT '[]',     -- JSON [{name, amount}]
     gpf             INTEGER NOT NULL DEFAULT 0,
     revenue_stamp   INTEGER NOT NULL DEFAULT 0,
@@ -112,3 +128,13 @@ CREATE TABLE IF NOT EXISTS payslips (
 );
 
 CREATE INDEX IF NOT EXISTS idx_payslips_employee ON payslips(employee_id);
+
+-- কর্মচারী নিজে প্রোফাইল বদলালে তার রেকর্ড (অ্যাডমিন দেখতে পাবেন)
+CREATE TABLE IF NOT EXISTS employee_changes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    field       TEXT NOT NULL,
+    old_value   TEXT,
+    new_value   TEXT,
+    changed_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);

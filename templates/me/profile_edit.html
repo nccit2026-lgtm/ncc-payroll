@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}প্রোফাইল হালনাগাদ{% endblock %}
+{% block content %}
+<div class="topbar"><h1>প্রোফাইল হালনাগাদ</h1><a class="btn" href="{{ url_for('my_profile') }}">← প্রোফাইলে ফিরুন</a></div>
+<div class="flash warn">শুধু ব্যক্তিগত ও ব্যাংক তথ্য এখানে বদলানো যায়। বেতন, গ্রেড, পদবি বা তারিখ সংক্রান্ত সংশোধনের জন্য হিসাব শাখায় যোগাযোগ করুন। প্রতিটি পরিবর্তন হিসাব শাখা দেখতে পায়।</div>
+<form class="card" method="post" style="max-width:760px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid g2">
+    {% for field, label in fields %}
+      <div class="field"><label for="{{ field }}">{{ label }}{% if field == 'name_bn' %} *{% endif %}</label>
+        {% if field == 'address' %}<textarea id="{{ field }}" name="{{ field }}" rows="2">{{ emp[field] or '' }}</textarea>
+        {% else %}<input id="{{ field }}" name="{{ field }}" value="{{ emp[field] or '' }}" {{ 'required' if field == 'name_bn' }} {{ 'type=email' if field == 'email' }}>{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <button class="primary" type="submit">সংরক্ষণ করুন</button>
+</form>
+{% endblock %}

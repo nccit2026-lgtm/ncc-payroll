@@ -6,12 +6,13 @@
 <form class="card" method="post" action="{{ url_for('payroll_new') }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
   <h2>নতুন মাসের বেতন শিট তৈরি</h2>
-  <p class="hint" style="margin-top:-8px">সকল সক্রিয় কর্মচারীর বর্তমান মূল বেতন, ভাতার নিয়ম ও অতিরিক্ত ভাতা/কর্তন থেকে খসড়া শিট তৈরি হবে। পরে প্রত্যেকের বেতন আলাদাভাবে সংশোধন করা যাবে।</p>
+  <p class="hint" style="margin-top:-8px">মাস অনুযায়ী নিয়ম নিজে থেকে বসবে: জুলাই–ডিসেম্বর ২০২৬ = ১ম কিস্তি, জানুয়ারি–জুন ২০২৭ = ২য় কিস্তি, জুলাই–ডিসেম্বর ২০২৭ = পূর্ণ স্কেল, জানুয়ারি ২০২৮ থেকে নতুন হারে ভাতা। বকেয়া একবারই (একটি মাসের শিটে) যুক্ত করুন। পরে প্রত্যেকের বেতন আলাদাভাবে সংশোধন করা যাবে।</p>
   <div class="inline-form">
     <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
     <div class="field" style="width:110px"><label>বছর</label><input name="year" value="{{ today.year }}" inputmode="numeric"></div>
     <div class="field"><label class="check"><input type="checkbox" name="festival" value="1"> উৎসব ভাতা যুক্ত করুন</label></div>
     <div class="field"><label class="check"><input type="checkbox" name="boishakhi" value="1"> বাংলা নববর্ষ ভাতা যুক্ত করুন</label></div>
+    <div class="field"><label class="check"><input type="checkbox" name="arrears" value="1"> জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া যুক্ত করুন</label></div>
     <div class="field" style="flex:1;min-width:160px"><label>মন্তব্য (ঐচ্ছিক)</label><input name="note" placeholder="যেমন: ঈদুল আযহা উৎসব ভাতা সহ"></div>
     <button class="primary" type="submit">শিট তৈরি করুন</button>
   </div>
@@ -23,7 +24,7 @@
   {% for r in runs %}
     <tr><td><a href="{{ url_for('payroll_view', run_id=r.id) }}"><b>{{ month_label(r.year, r.month) }}</b></a></td><td>{{ status_badge(r.status) }}</td>
       <td class="num">{{ r.headcount|bn }}</td><td class="num">{{ r.gross|taka }}</td><td class="num">{{ r.deduction|taka }}</td><td class="num"><b>{{ r.net|taka }}</b></td>
-      <td class="small">{{ r.note or '' }}{% if r.include_festival %} <span class="badge final">উৎসব</span>{% endif %}{% if r.include_boishakhi %} <span class="badge final">নববর্ষ</span>{% endif %}</td>
+      <td class="small">{{ r.note or '' }}{% if r.include_festival %} <span class="badge final">উৎসব</span>{% endif %}{% if r.include_boishakhi %} <span class="badge final">নববর্ষ</span>{% endif %}{% if r.include_arrears %} <span class="badge final">বকেয়া</span>{% endif %}</td>
       <td class="actions-cell"><a class="btn sm" href="{{ url_for('payroll_view', run_id=r.id) }}">খুলুন</a> <a class="btn sm" href="{{ url_for('payroll_excel', run_id=r.id) }}">Excel</a></td></tr>
   {% else %}<tr><td colspan="8" class="muted">এখনো কোনো বেতন শিট তৈরি হয়নি।</td></tr>{% endfor %}
   </tbody>

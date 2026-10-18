@@ -14,6 +14,7 @@ TOTAL_FILL = PatternFill("solid", fgColor="E6F0EC")
 THIN = Side(style="thin", color="B7C4BE")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 MONEY = "#,##0"
+MONEY_PAISA = "#,##0.00"
 
 
 def _title(ws, office, title, ncols):
@@ -41,7 +42,8 @@ def _style_body(ws, first, last, ncols, money_from):
             c.font = Font(name=FONT, bold=c.font.bold)
             c.border = BORDER
             if col >= money_from:
-                c.number_format = MONEY
+                v = c.value
+                c.number_format = MONEY_PAISA if isinstance(v, float) and not v.is_integer() else MONEY
 
 
 def _totals_row(ws, row, first, last, label_col, money_cols):
@@ -52,6 +54,9 @@ def _totals_row(ws, row, first, last, label_col, money_cols):
         L = get_column_letter(col)
         c = ws.cell(row=row, column=col, value=f"=SUM({L}{first}:{L}{last})")
         c.font = Font(name=FONT, bold=True)
+        paisa = any(isinstance(ws.cell(row=r, column=col).value, float)
+                    and not ws.cell(row=r, column=col).value.is_integer() for r in range(first, last + 1))
+        c.number_format = MONEY_PAISA if paisa else MONEY
 
 
 def _widths(ws, widths):
@@ -72,18 +77,20 @@ def payroll_workbook(run, slips, settings):
     ws.title = "বেতন শিট"
     period = f"{MONTHS_BN[run['month']]} {bn_num(run['year'])}"
 
-    allowance_cols = [
-        ("basic", "মূল বেতন"), ("house_rent", "বাড়ি ভাড়া"), ("medical", "চিকিৎসা"),
-        ("education", "শিক্ষা সহায়ক"), ("tiffin", "টিফিন"), ("transport", "যাতায়াত"),
-    ]
-    if run["include_festival"]:
-        allowance_cols.append(("festival", "উৎসব ভাতা"))
-    if run["include_boishakhi"]:
-        allowance_cols.append(("boishakhi", "নববর্ষ ভাতা"))
+    # যে ভাতা এ মাসে কারো নেই সেই কলাম বাদ
+    all_cols = [("basic", "মূল বেতন"), ("house_rent", "বাড়িভাড়া"), ("medical", "চিকিৎসা"),
+                ("education", "শিক্ষা সহায়ক"), ("tiffin", "টিফিন"), ("transport", "যাতায়াত"), ("mobile", "মোবাইল"),
+                ("wash", "ধোলাই"), ("special", "বিশেষ সুবিধা (মহার্ঘ)"), ("pf_office", "অফিস প্রদত্ত PF"),
+                ("festival", "উৎসব ভাতা"), ("boishakhi", "নববর্ষ ভাতা")]
+    allowance_cols = [(k, h) for k, h in all_cols if k in ("basic", "house_rent", "medical") or any(s[k] for s in slips)]
+    has_pf = any(s["pf_fund"] or s["pf_own"] for s in slips)
+    has_stamp = any(s["revenue_stamp"] for s in slips)
+    ded_cols = ([("pf_fund", "PF (অফিস অংশ জমা)"), ("pf_own", "PF (নিজ অংশ)")] if has_pf else []) + \
+        ([("revenue_stamp", "রাজস্ব স্ট্যাম্প")] if has_stamp else [])
 
     info = ["ক্রম", "আইডি", "নাম", "পদবি", "শাখা", "গ্রেড", "হিসাব নং"]
-    headers = (info + [h for _, h in allowance_cols] + ["অন্যান্য ভাতা", "মোট বেতন", "জিপিএফ", "রাজস্ব স্ট্যাম্প",
-               "অন্যান্য কর্তন", "মোট কর্তন", "নিট প্রদেয়"])
+    headers = (info + [h for _, h in allowance_cols] + ["অন্যান্য ভাতা / বকেয়া", "মোট বেতন"] + [h for _, h in ded_cols]
+               + ["অন্যান্য কর্তন", "মোট কর্তন", "নিট প্রদেয়"])
     n = len(headers)
     _title(ws, settings, f"মাসিক বেতন শিট — {period}", n)
     hr = 5
@@ -92,11 +99,11 @@ def payroll_workbook(run, slips, settings):
     r = hr
     for i, s in enumerate(slips, 1):
         r += 1
-        oa = sum(int(x["amount"]) for x in json.loads(s["other_allowance"]))
-        od = sum(int(x["amount"]) for x in json.loads(s["other_deduction"]))
+        oa = round(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])), 2)
+        od = round(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])), 2)
         values = ([i, s["code"], s["name_bn"], s["designation"], s["department"], s["grade"], s["account_no"]]
-                  + [s[k] for k, _ in allowance_cols]
-                  + [oa, s["gross"], s["gpf"], s["revenue_stamp"], od, s["total_deduction"], s["net"]])
+                  + [s[k] for k, _ in allowance_cols] + [oa, s["gross"]] + [s[k] for k, _ in ded_cols]
+                  + [od, s["total_deduction"], s["net"]])
         for col, v in enumerate(values, 1):
             ws.cell(row=r, column=col, value=v)
     first, last = hr + 1, max(r, hr + 1)
@@ -170,14 +177,15 @@ def employee_history_workbook(emp, slips, settings):
     wb = Workbook()
     ws = wb.active
     ws.title = "বেতন ইতিহাস"
-    headers = ["মাস", "মূল বেতন", "বাড়ি ভাড়া", "চিকিৎসা", "শিক্ষা", "টিফিন", "যাতায়াত", "উৎসব/নববর্ষ",
-               "অন্যান্য ভাতা", "মোট বেতন", "মোট কর্তন", "নিট প্রাপ্তি"]
+    headers = ["মাস", "মূল বেতন", "বাড়িভাড়া", "চিকিৎসা", "শিক্ষা", "টিফিন", "যাতায়াত", "মোবাইল/ধোলাই/মহার্ঘ/PF",
+               "উৎসব/নববর্ষ", "অন্যান্য ভাতা/বকেয়া", "মোট বেতন", "মোট কর্তন", "নিট প্রাপ্তি"]
     _title(ws, settings, f"বেতন ইতিহাস — {emp['name_bn']} ({emp['code']})", len(headers))
     _header(ws, 5, headers)
     for i, s in enumerate(slips, 1):
-        oa = sum(int(x["amount"]) for x in json.loads(s["other_allowance"]))
+        oa = round(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])), 2)
+        others = s["mobile"] + s["wash"] + s["special"] + s["pf_office"]
         vals = [f"{MONTHS_BN[s['month']]} {s['year']}", s["basic"], s["house_rent"], s["medical"], s["education"],
-                s["tiffin"], s["transport"], s["festival"] + s["boishakhi"], oa, s["gross"], s["total_deduction"],
+                s["tiffin"], s["transport"], others, s["festival"] + s["boishakhi"], oa, s["gross"], s["total_deduction"],
                 s["net"]]
         for col, v in enumerate(vals, 1):
             ws.cell(row=5 + i, column=col, value=v)
@@ -190,15 +198,20 @@ def employee_history_workbook(emp, slips, settings):
 
 # কর্মচারী ইমপোর্ট/এক্সপোর্ট কলাম: (ডাটাবেস ফিল্ড, শিরোনাম)
 EMPLOYEE_COLUMNS = [
-    ("code", "আইডি*"), ("name_bn", "নাম (বাংলা)*"), ("name_en", "নাম (ইংরেজি)"), ("father_name", "পিতার নাম"),
-    ("mother_name", "মাতার নাম"), ("gender", "লিঙ্গ"), ("dob", "জন্ম তারিখ (YYYY-MM-DD)"), ("nid", "এনআইডি"),
-    ("mobile", "মোবাইল"), ("email", "ইমেইল"), ("address", "ঠিকানা"), ("designation", "পদবি"),
-    ("department", "শাখা/বিভাগ"), ("employment_type", "চাকরির ধরন"), ("join_date", "যোগদানের তারিখ (YYYY-MM-DD)"),
-    ("prl_date", "পিআরএল তারিখ (YYYY-MM-DD)"), ("grade", "গ্রেড"), ("basic", "মূল বেতন"),
-    ("children", "সন্তান সংখ্যা"), ("govt_quarter", "সরকারি বাসা (১=হ্যাঁ)"), ("gpf_pct", "জিপিএফ %"),
-    ("gpf_no", "জিপিএফ নং"), ("tin", "টিআইএন"), ("bank_name", "ব্যাংক"), ("bank_branch", "শাখা (ব্যাংক)"),
-    ("account_no", "হিসাব নং"),
+    ("code", "আইডি*"), ("name_bn", "নাম (বাংলা)*"), ("name_en", "নাম (ইংরেজি)"), ("designation", "পদবি"),
+    ("department", "শাখা/বিভাগ"), ("grade", "গ্রেড"), ("basic", "মূল বেতন (৩০-০৬-২০২৬)"),
+    ("inc_2026", "ইনক্রিমেন্ট ০১-০৭-২০২৬ (হ্যাঁ/না)"), ("inc_2027", "ইনক্রিমেন্ট ০১-০৭-২০২৭ (হ্যাঁ/না)"),
+    ("new_basic_override", "নতুন মূল বেতন ০১-০৭-২০২৬ (ঐচ্ছিক)"), ("pf", "PF প্রযোজ্য (হ্যাঁ/না)"),
+    ("children", "সন্তান সংখ্যা (০/১/২)"), ("tiffin", "টিফিন ভাতা (হ্যাঁ/না)"), ("transport", "যাতায়াত ভাতা (হ্যাঁ/না)"),
+    ("wash", "ধোলাই ভাতা (হ্যাঁ/না)"), ("govt_quarter", "সরকারি বাসা (হ্যাঁ/না)"),
+    ("special_rate", "মহার্ঘ হার (auto/0.10/0.15/0)"),
+    ("join_date", "যোগদানের তারিখ (YYYY-MM-DD)"), ("dob", "জন্ম তারিখ (YYYY-MM-DD)"),
+    ("prl_date", "পিআরএল তারিখ (YYYY-MM-DD)"), ("employment_type", "চাকরির ধরন"), ("status", "অবস্থা (active/inactive)"),
+    ("father_name", "পিতার নাম"), ("mother_name", "মাতার নাম"), ("gender", "লিঙ্গ"), ("nid", "এনআইডি"),
+    ("mobile", "মোবাইল"), ("email", "ইমেইল"), ("address", "ঠিকানা"), ("tin", "টিআইএন"),
+    ("bank_name", "ব্যাংক"), ("bank_branch", "শাখা (ব্যাংক)"), ("account_no", "হিসাব নং"),
 ]
+FLAG_COLUMNS = {"inc_2026", "inc_2027", "pf", "tiffin", "transport", "wash", "govt_quarter"}
 
 
 def employees_workbook(employees, settings, template=False):
@@ -208,14 +221,17 @@ def employees_workbook(employees, settings, template=False):
     _header(ws, 1, [h for _, h in EMPLOYEE_COLUMNS])
     if template:
         sample = {"code": "NCC-0001", "name_bn": "মোঃ রহিম উদ্দিন", "name_en": "Md. Rahim Uddin", "gender": "পুরুষ",
-                  "dob": "1980-05-12", "mobile": "01700000000", "designation": "উচ্চমান সহকারী",
-                  "department": "প্রশাসন", "employment_type": "স্থায়ী", "join_date": "2008-07-01", "grade": 14,
-                  "basic": 23500, "children": 2, "govt_quarter": 0, "gpf_pct": 5, "bank_name": "সোনালী ব্যাংক",
-                  "bank_branch": "নারায়ণগঞ্জ কর্পোরেট", "account_no": "0000000000000"}
+                  "dob": "1980-05-12", "mobile": "01700000000", "designation": "অফিস সহকারী",
+                  "department": "সাধারণ শাখা", "employment_type": "স্থায়ী", "join_date": "2008-07-01", "grade": 14,
+                  "basic": 22380, "inc_2026": 1, "inc_2027": 1, "pf": 0, "children": 2, "tiffin": 1, "transport": 1,
+                  "wash": 0, "govt_quarter": 0, "special_rate": "auto", "status": "active",
+                  "bank_name": "সোনালী ব্যাংক", "bank_branch": "নারায়ণগঞ্জ কর্পোরেট", "account_no": "0000000000000"}
         employees = [sample]
     for r, emp in enumerate(employees, 2):
         for col, (field, _) in enumerate(EMPLOYEE_COLUMNS, 1):
             v = emp[field] if field in emp.keys() else None
+            if field in FLAG_COLUMNS and v is not None:
+                v = "হ্যাঁ" if v else "না"
             ws.cell(row=r, column=col, value=v).font = Font(name=FONT)
     for i in range(1, len(EMPLOYEE_COLUMNS) + 1):
         ws.column_dimensions[get_column_letter(i)].width = 18

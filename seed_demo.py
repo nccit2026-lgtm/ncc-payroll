@@ -7,7 +7,8 @@ import random
 from datetime import date
 
 from app import create_app, save_employee
-from db import get_db, get_pay_grades
+from db import get_db
+from payscale import OLD
 from payroll import generate_run
 
 FIRST = ["মোঃ রহিম", "মোঃ করিম", "আব্দুল হালিম", "মোছাঃ রোকেয়া", "ফাতেমা", "নাসরিন", "মোঃ জসিম", "শাহানা", "মোঃ আলমগীর",
@@ -35,13 +36,10 @@ def main():
         if conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]:
             print("ডাটাবেসে আগে থেকেই কর্মচারী আছে — ডেমো ডাটা যোগ করা হলো না।")
             return
-        grades = get_pay_grades()
         for i in range(1, 201):
             dept = random.choice(list(DEPTS))
             grade, desig = random.choice(DEPTS[dept])
-            pg = grades[grade]
-            steps = random.randint(0, 12)
-            basic = min(int(round(pg["start_basic"] * 1.05 ** steps / 10) * 10), pg["max_basic"])
+            basic = random.choice(OLD[grade])
             dob = date(random.randint(1968, 1998), random.randint(1, 12), random.randint(1, 28))
             name = f"{random.choice(FIRST)} {random.choice(LAST)}"
             emp_id = save_employee({
@@ -52,8 +50,10 @@ def main():
                 "address": "নারায়ণগঞ্জ", "designation": desig, "department": dept,
                 "employment_type": random.choice(["স্থায়ী"] * 9 + ["চুক্তিভিত্তিক"]),
                 "join_date": date(max(dob.year + 22, 1995), random.randint(1, 12), 1).isoformat(), "prl_date": None,
-                "status": "active", "grade": grade, "basic": basic, "children": random.choice([0, 1, 1, 2, 2, 3]),
-                "govt_quarter": 1 if random.random() < 0.05 else 0, "gpf_pct": 5, "gpf_no": None, "tin": None,
+                "status": "active", "grade": grade, "basic": basic, "children": random.choice([0, 1, 1, 2, 2]),
+                "govt_quarter": 1 if random.random() < 0.05 else 0, "gpf_no": None, "tin": None,
+                "inc_2026": 1, "inc_2027": 1, "new_basic_override": None, "pf": 1 if random.random() < 0.3 else 0,
+                "special_rate": "auto", "tiffin": 1, "transport": 1, "wash": 1 if grade == 20 else 0,
                 "bank_name": random.choice(BANKS), "bank_branch": "নারায়ণগঞ্জ",
                 "account_no": str(random.randint(10**12, 10**13 - 1)),
                 "ovr_house_rent": None, "ovr_medical": None, "ovr_education": None, "ovr_tiffin": None, "ovr_transport": None,
@@ -68,7 +68,7 @@ def main():
 
         # জুলাই–সেপ্টেম্বর ২০২৬ চূড়ান্ত শিট (সেপ্টেম্বরে উৎসব ভাতা সহ)
         for month, fest in [(7, False), (8, False), (9, True)]:
-            run_id = generate_run(2026, month, fest, False, "ঈদ/পূজা উৎসব ভাতা সহ" if fest else "")
+            run_id, _ = generate_run(2026, month, fest, False, "ঈদ/পূজা উৎসব ভাতা সহ" if fest else "")
             conn.execute("UPDATE payroll_runs SET status = 'final', finalized_at = CURRENT_TIMESTAMP WHERE id = ?", (run_id,))
         conn.commit()
         print("ডেমো ডাটা তৈরি হয়েছে: ২০০ জন কর্মচারী, জুলাই–সেপ্টেম্বর ২০২৬ এর বেতন শিট।")

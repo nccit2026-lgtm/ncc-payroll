@@ -17,9 +17,20 @@
     <select name="status"><option value="active" {{ 'selected' if status == 'active' }}>সক্রিয়</option><option value="inactive" {{ 'selected' if status == 'inactive' }}>নিষ্ক্রিয়</option><option value="" {{ 'selected' if status == '' }}>সব</option></select></div>
   <button type="submit">খুঁজুন</button>
 </form>
+{% if depts %}
+<details class="card" style="padding:12px 18px">
+  <summary>শাখার নাম পরিবর্তন (একসাথে সবার)</summary>
+  <form method="post" action="{{ url_for('department_rename') }}" class="inline-form" style="margin-top:10px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field"><label>বর্তমান নাম</label><select name="old">{% for d in depts %}<option {{ 'selected' if d == dept }}>{{ d }}</option>{% endfor %}</select></div>
+    <div class="field" style="flex:1;min-width:200px"><label>নতুন নাম</label><input name="new" required></div>
+    <button type="submit">পরিবর্তন করুন</button>
+  </form>
+</details>
+{% endif %}
 <div class="table-wrap">
 <table>
-  <thead><tr><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th class="num">মূল বেতন</th><th>মোবাইল</th><th></th></tr></thead>
+  <thead><tr><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>মোবাইল</th><th></th></tr></thead>
   <tbody>
   {% for e in rows %}
     <tr>

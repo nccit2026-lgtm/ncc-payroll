@@ -32,30 +32,37 @@
 {% endif %}
 
 <form method="get" class="no-print" style="margin-bottom:10px"><input id="filter" placeholder="এই শিটে নাম/আইডি দিয়ে খুঁজুন…" style="max-width:340px" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#sheet tbody tr').forEach(function(r){r.style.display=r.textContent.toLowerCase().indexOf(q)>-1?'':'none'})"></form>
+{% set acols = [] %}{% set ns = namespace(fixed=0) %}
+{% for k, label in [('basic','মূল বেতন'), ('house_rent','বাড়িভাড়া'), ('medical','চিকিৎসা'), ('education','শিক্ষা'), ('tiffin','টিফিন'), ('transport','যাতায়াত'), ('mobile','মোবাইল'), ('wash','ধোলাই'), ('special','মহার্ঘ'), ('pf_office','অফিস PF'), ('festival','উৎসব'), ('boishakhi','নববর্ষ')] %}
+  {% if k in ['basic','house_rent','medical'] or totals[k] %}{% set _ = acols.append((k, label)) %}{% endif %}
+  {% set ns.fixed = ns.fixed + totals[k] %}
+{% endfor %}
+{% set other_a_total = totals.gross - ns.fixed %}
 <div class="table-wrap" style="max-height:70vh">
 <table id="sheet">
   <thead><tr>
-    <th>আইডি</th><th>নাম ও পদবি</th><th>গ্রেড</th><th class="num">মূল বেতন</th><th class="num">বাড়ি ভাড়া</th><th class="num">চিকিৎসা</th><th class="num">শিক্ষা</th><th class="num">টিফিন</th><th class="num">যাতায়াত</th>
-    {% if run.include_festival %}<th class="num">উৎসব</th>{% endif %}{% if run.include_boishakhi %}<th class="num">নববর্ষ</th>{% endif %}
-    <th class="num">অন্যান্য ভাতা</th><th class="num">মোট বেতন</th><th class="num">জিপিএফ</th><th class="num">অন্যান্য কর্তন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th><th></th>
+    <th>আইডি</th><th>নাম ও পদবি</th><th>শাখা</th><th>গ্রেড</th>
+    {% for k, label in acols %}<th class="num">{{ label }}</th>{% endfor %}
+    <th class="num">অন্যান্য ভাতা/বকেয়া</th><th class="num">মোট বেতন</th><th class="num">PF কর্তন</th><th class="num">অন্যান্য কর্তন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th><th></th>
   </tr></thead>
   <tbody>
   {% for s in slips %}
     {% set oa = loads(s.other_allowance) | sum(attribute='amount') %}{% set od = loads(s.other_deduction) | sum(attribute='amount') %}
     <tr>
-      <td>{{ s.code }}</td><td><b>{{ s.name_bn }}</b><div class="small muted">{{ s.designation or '' }}</div></td><td>{{ s.grade|bn if s.grade }}</td>
-      <td class="num">{{ s.basic|taka }}</td><td class="num">{{ s.house_rent|taka }}</td><td class="num">{{ s.medical|taka }}</td><td class="num">{{ s.education|taka }}</td><td class="num">{{ s.tiffin|taka }}</td><td class="num">{{ s.transport|taka }}</td>
-      {% if run.include_festival %}<td class="num">{{ s.festival|taka }}</td>{% endif %}{% if run.include_boishakhi %}<td class="num">{{ s.boishakhi|taka }}</td>{% endif %}
-      <td class="num">{{ oa|taka }}</td><td class="num"><b>{{ s.gross|taka }}</b></td><td class="num">{{ s.gpf|taka }}</td><td class="num">{{ (od + s.revenue_stamp)|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td>
+      <td>{{ s.code }}</td>
+      <td><b>{{ s.name_bn }}</b>{% if s.employee_id in on_prl %} <span class="badge draft" title="জন্মতারিখ/PRL তারিখ অনুযায়ী অবসর-উত্তর ছুটি শুরু হয়েছে">PRL</span>{% endif %}<div class="small muted">{{ s.designation or '' }}</div></td>
+      <td class="small">{{ s.department or '' }}</td><td>{{ s.grade|bn if s.grade }}</td>
+      {% for k, label in acols %}<td class="num">{{ s[k]|taka }}</td>{% endfor %}
+      <td class="num">{{ oa|taka }}</td><td class="num"><b>{{ s.gross|taka }}</b></td><td class="num">{{ (s.pf_fund + s.pf_own)|taka }}</td><td class="num">{{ (od + s.revenue_stamp)|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td>
       <td class="actions-cell">{% if draft %}<a class="btn sm" href="{{ url_for('payslip_edit', run_id=run.id, slip_id=s.id) }}">সংশোধন</a>{% endif %} <a class="btn sm" href="{{ url_for('payslip', slip_id=s.id) }}">বিবরণী</a></td>
     </tr>
   {% endfor %}
   </tbody>
   <tfoot><tr>
-    <td colspan="3">সর্বমোট</td><td class="num">{{ totals.basic|taka }}</td><td class="num">{{ totals.house_rent|taka }}</td><td class="num">{{ totals.medical|taka }}</td><td class="num">{{ totals.education|taka }}</td><td class="num">{{ totals.tiffin|taka }}</td><td class="num">{{ totals.transport|taka }}</td>
-    {% if run.include_festival %}<td class="num">{{ totals.festival|taka }}</td>{% endif %}{% if run.include_boishakhi %}<td class="num">{{ totals.boishakhi|taka }}</td>{% endif %}
-    <td class="num">{{ (totals.gross - totals.basic - totals.house_rent - totals.medical - totals.education - totals.tiffin - totals.transport - totals.festival - totals.boishakhi)|taka }}</td>
-    <td class="num">{{ totals.gross|taka }}</td><td class="num">{{ totals.gpf|taka }}</td><td class="num">{{ (totals.total_deduction - totals.gpf)|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td><td></td>
+    <td colspan="4">সর্বমোট ({{ slips|length|bn }} জন)</td>
+    {% for k, label in acols %}<td class="num">{{ totals[k]|taka }}</td>{% endfor %}
+    <td class="num">{{ other_a_total|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ (totals.pf_fund + totals.pf_own)|taka }}</td>
+    <td class="num">{{ (totals.total_deduction - totals.pf_fund - totals.pf_own)|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td><td></td>
   </tr></tfoot>
 </table>
 </div>

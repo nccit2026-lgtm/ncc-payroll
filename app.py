@@ -13,7 +13,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import excel
 from bn import MONTHS_BN, bn_date, bn_num, bn_pct, bn_taka, month_label
-from db import close_db, get_db, get_pay_grades, get_settings, init_db, save_setting
+from db import close_db, get_db, get_settings, init_db, save_setting
+import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
                      generate_run, insert_slip, regenerate_slip)
 
@@ -53,7 +54,7 @@ def create_app(database=None):
     if os.environ.get("BEHIND_PROXY") == "1":  # nginx / হোস্টিং প্রক্সির পেছনে
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.teardown_appcontext(close_db)
-    app.jinja_env.filters.update(bn=bn_num, taka=bn_taka, bndate=bn_date, pct=bn_pct)
+    app.jinja_env.filters.update(bn=bn_num, taka=bn_taka, bndate=bn_date, pct=bn_pct, plain=plain_num)
     app.jinja_env.globals.update(MONTHS_BN=MONTHS_BN, month_label=month_label, FIELD_LABELS=FIELD_LABELS,
                                  loads=json.loads)
     with app.app_context():
@@ -79,6 +80,17 @@ def to_int(value, default=0):
         return default
 
 
+def plain_num(v):
+    """ফর্মের ঘরে দেখানোর জন্য: 63960.0 → 63960, ফাঁকা → ''।"""
+    if v is None or v == "":
+        return ""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return v
+    return int(f) if f.is_integer() else f
+
+
 def to_float(value, default=0.0):
     s = str(value or "").translate(BN_TO_EN).replace(",", "").strip()
     try:
@@ -87,10 +99,10 @@ def to_float(value, default=0.0):
         return default
 
 
-def optional_int(value):
+def optional_num(value):
     """খালি ঘর = None (স্বয়ংক্রিয় হিসাব)।"""
-    s = str(value or "").translate(BN_TO_EN).replace(",", "").strip()
-    return to_int(s) if s else None
+    s = str(value if value is not None else "").translate(BN_TO_EN).replace(",", "").replace("/-", "").strip()
+    return round(to_float(s), 2) if s else None
 
 
 def clean_date(value):
@@ -144,10 +156,28 @@ def xlsx_response(buf, filename):
 
 
 EMPLOYEE_TEXT_FIELDS = ["code", "name_bn", "name_en", "father_name", "mother_name", "gender", "nid", "mobile",
-                        "email", "address", "designation", "department", "employment_type", "status", "gpf_no", "tin",
+                        "email", "address", "designation", "department", "employment_type", "status", "tin",
                         "bank_name", "bank_branch", "account_no"]
 EMPLOYEE_DATE_FIELDS = ["dob", "join_date", "prl_date"]
 OVERRIDE_FIELDS = ["ovr_house_rent", "ovr_medical", "ovr_education", "ovr_tiffin", "ovr_transport"]
+FLAG_FIELDS = ["govt_quarter", "inc_2026", "inc_2027", "pf", "tiffin", "transport", "wash"]
+SPECIAL_RATES = ["auto", "0.10", "0.15", "0"]
+
+# কর্মচারী নিজে যেসব তথ্য বদলাতে পারবেন (বেতন সংক্রান্ত কিছু নয়)
+SELF_EDIT_FIELDS = [("name_bn", "নাম (বাংলায়)"), ("name_en", "নাম (ইংরেজিতে)"), ("father_name", "পিতার নাম"),
+                    ("mother_name", "মাতার নাম"), ("nid", "জাতীয় পরিচয়পত্র নং"), ("mobile", "মোবাইল"),
+                    ("email", "ইমেইল"), ("address", "ঠিকানা"), ("bank_name", "ব্যাংকের নাম"),
+                    ("bank_branch", "ব্যাংক শাখা"), ("account_no", "হিসাব নম্বর"), ("tin", "টিআইএন")]
+
+
+# ইমপোর্টে নতুন কর্মচারীর ঘর খালি থাকলে
+IMPORT_DEFAULTS = {"inc_2026": 1, "inc_2027": 1, "tiffin": 1, "transport": 1, "pf": 0, "wash": 0, "govt_quarter": 0,
+                   "special_rate": "auto", "status": "active", "employment_type": "স্থায়ী", "children": 0}
+
+
+def parse_flag(v):
+    s = str(v if v is not None else "").translate(BN_TO_EN).strip().lower()
+    return s not in ("", "0", "না", "no", "n", "false", "none")
 
 
 def employee_from_form(form):
@@ -155,11 +185,13 @@ def employee_from_form(form):
     data.update({f: clean_date(form.get(f)) for f in EMPLOYEE_DATE_FIELDS})
     data["status"] = data["status"] or "active"
     data["grade"] = to_int(form.get("grade"), None)
-    data["basic"] = to_int(form.get("basic"))
-    data["children"] = to_int(form.get("children"))
-    data["govt_quarter"] = 1 if form.get("govt_quarter") else 0
-    data["gpf_pct"] = to_float(form.get("gpf_pct"), 0)
-    data.update({f: optional_int(form.get(f)) for f in OVERRIDE_FIELDS})
+    data["basic"] = optional_num(form.get("basic")) or 0
+    data["children"] = min(to_int(form.get("children")), 2)
+    data.update({f: 1 if form.get(f) else 0 for f in FLAG_FIELDS})
+    rate = form.get("special_rate") or "auto"
+    data["special_rate"] = rate if rate in SPECIAL_RATES else "auto"
+    data["new_basic_override"] = optional_num(form.get("new_basic_override"))
+    data.update({f: optional_num(form.get(f)) for f in OVERRIDE_FIELDS})
     return data
 
 
@@ -180,11 +212,14 @@ def save_employee(data, emp_id=None):
     return emp_id
 
 
-def basic_range_warning(grade, basic):
-    pg = get_pay_grades().get(grade)
-    if pg and not (pg["start_basic"] <= basic <= pg["max_basic"]):
-        flash(f"সতর্কতা: গ্রেড-{bn_num(grade)} এর মূল বেতনের পরিসর {bn_taka(pg['start_basic'])}–"
-              f"{bn_taka(pg['max_basic'])} টাকা, কিন্তু দেওয়া হয়েছে {bn_taka(basic)} টাকা।", "warn")
+def basic_range_warning(data):
+    """৩০-০৬-২০২৬ এর মূল বেতন ২০১৫ স্কেলের ধাপের সাথে না মিললে সতর্কতা।"""
+    if payscale.is_new_joiner(data):
+        return
+    steps = payscale.OLD.get(data["grade"])
+    if steps and data["basic"] not in steps:
+        flash(f"সতর্কতা: {bn_taka(data['basic'])} টাকা গ্রেড-{bn_num(data['grade'])} এর ২০১৫ স্কেলের কোনো ধাপের সাথে "
+              f"মেলেনি ({bn_taka(steps[0])}–{bn_taka(steps[-1])})। হিসাব হবে, তবে সংখ্যাটি যাচাই করুন।", "warn")
 
 
 def run_totals():
@@ -207,6 +242,17 @@ def require_draft(run):
         flash("চূড়ান্ত বেতন শিট পরিবর্তন করা যায় না। প্রয়োজনে আগে 'খসড়ায় ফেরত' দিন।", "error")
         return False
     return True
+
+
+def pay_context(emp):
+    """কর্মচারীর বেতন নির্ধারণ বিবরণী: পে ফিক্সেশন, পাঁচ তারিখের তুলনা, বকেয়া ও এ মাসের বেতন।"""
+    today = date.today()
+    pl = payscale.plan(emp)
+    current = compute_components(emp, get_settings(), today.year, today.month) if "error" not in pl else None
+    return {"plan": pl, "compare": payscale.comparison(emp) if "res" in pl else [],
+            "arrears": payscale.arrears(emp), "current": current, "today": today, "phase": payscale.phase_of(today.year, today.month),
+            "age": age_on(emp["dob"], today), "prl": payscale.prl_date(emp["dob"]), "special_rate": payscale.special_rate(emp)
+            if emp["grade"] else 0}
 
 
 def employee_slips(emp_id, final_only):
@@ -310,8 +356,12 @@ def register_routes(app):
         today = date.today()
         this_run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ?",
                                 (today.year, today.month)).fetchone()
+        changes = conn.execute(
+            "SELECT c.*, e.name_bn, e.code FROM employee_changes c JOIN employees e ON e.id = c.employee_id "
+            "ORDER BY c.id DESC LIMIT 10").fetchall()
         return render_template("admin/dashboard.html", stats=stats, runs=runs[-12:], last=runs[-1] if runs else None,
-                               prev=runs[-2] if len(runs) > 1 else None, depts=depts, this_run=this_run, today=today)
+                               prev=runs[-2] if len(runs) > 1 else None, depts=depts, this_run=this_run, today=today,
+                               changes=changes, phase=payscale.phase_of(today.year, today.month))
 
     # ---------- কর্মচারী
 
@@ -331,7 +381,7 @@ def register_routes(app):
         if status:
             sql += " AND status = ?"
             args.append(status)
-        rows = get_db().execute(sql + " ORDER BY grade, code", args).fetchall()
+        rows = get_db().execute(sql + " ORDER BY code", args).fetchall()
         depts = [r[0] for r in get_db().execute(
             "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
         return render_template("admin/employees.html", rows=rows, q=q, dept=dept, status=status, depts=depts)
@@ -342,7 +392,7 @@ def register_routes(app):
             "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
         desigs = [r[0] for r in conn.execute(
             "SELECT DISTINCT designation FROM employees WHERE designation IS NOT NULL ORDER BY designation")]
-        return {"emp": emp, "grades": get_pay_grades(), "depts": depts, "desigs": desigs}
+        return {"emp": emp, "scales": payscale.OLD, "depts": depts, "desigs": desigs}
 
     @app.route("/admin/employees/new", methods=["GET", "POST"])
     @admin_required
@@ -356,7 +406,7 @@ def register_routes(app):
             else:
                 emp_id = save_employee(data)
                 get_db().commit()
-                basic_range_warning(data["grade"], data["basic"])
+                basic_range_warning(data)
                 flash(f"কর্মচারী যুক্ত হয়েছে। লগইন আইডি ও প্রাথমিক পাসওয়ার্ড: {data['code']}", "ok")
                 return redirect(url_for("employee_view", emp_id=emp_id))
             return render_template("admin/employee_form.html", **employee_form_context(data))
@@ -377,7 +427,7 @@ def register_routes(app):
             else:
                 save_employee(data, emp_id)
                 get_db().commit()
-                basic_range_warning(data["grade"], data["basic"])
+                basic_range_warning(data)
                 flash("তথ্য হালনাগাদ হয়েছে।", "ok")
                 return redirect(url_for("employee_view", emp_id=emp_id))
             data["id"] = emp_id
@@ -391,10 +441,10 @@ def register_routes(app):
         emp = conn.execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
         items = conn.execute("SELECT * FROM employee_items WHERE employee_id = ? ORDER BY kind, id", (emp_id,)).fetchall()
         account = conn.execute("SELECT * FROM users WHERE employee_id = ?", (emp_id,)).fetchone()
-        today = date.today()
-        preview = compute_components(emp, get_settings(), today.year, today.month)
-        return render_template("admin/employee_view.html", emp=emp, items=items, account=account, preview=preview,
-                               slips=employee_slips(emp_id, final_only=False), age=age_on(emp["dob"], today))
+        changes = conn.execute("SELECT * FROM employee_changes WHERE employee_id = ? ORDER BY id DESC LIMIT 20",
+                               (emp_id,)).fetchall()
+        return render_template("admin/employee_view.html", emp=emp, items=items, account=account, changes=changes,
+                               slips=employee_slips(emp_id, final_only=False), **pay_context(emp))
 
     @app.route("/admin/employees/<int:emp_id>/items", methods=["POST"])
     @admin_required
@@ -403,7 +453,7 @@ def register_routes(app):
         kind = request.form.get("kind")
         if name and kind in ("allowance", "deduction"):
             get_db().execute("INSERT INTO employee_items (employee_id, kind, name, amount) VALUES (?, ?, ?, ?)",
-                             (emp_id, kind, name, to_int(request.form.get("amount"))))
+                             (emp_id, kind, name, round(to_float(request.form.get("amount")), 2)))
             get_db().commit()
             flash("যুক্ত হয়েছে।", "ok")
         return redirect(url_for("employee_view", emp_id=emp_id) + "#salary")
@@ -474,82 +524,55 @@ def register_routes(app):
                     errors.append(f"সারি {bn_num(r_idx)}: আইডি/নাম নেই")
                     continue
                 existing = conn.execute("SELECT * FROM employees WHERE code = ?", (code,)).fetchone()
-                form = dict(existing) if existing else {}
-                form.update({k: ("" if v is None else v) for k, v in raw.items()})
-                for k in OVERRIDE_FIELDS:
-                    form[k] = "" if form.get(k) is None else form[k]
-                form["govt_quarter"] = "1" if to_int(form.get("govt_quarter")) else ""
-                if "gpf_pct" not in raw and not existing:
-                    form["gpf_pct"] = 5
-                data = employee_from_form({k: (v if isinstance(v, (date, datetime)) else str(v))
-                                           for k, v in form.items()})
-                data.update({f: clean_date(form.get(f)) for f in EMPLOYEE_DATE_FIELDS})
+                form = dict(existing) if existing else dict(IMPORT_DEFAULTS)
+                form.update({k: v for k, v in raw.items() if v not in (None, "")})
+                for k in FLAG_FIELDS:
+                    form[k] = "1" if parse_flag(form.get(k)) else ""
+                form = {k: ("" if v is None else v if isinstance(v, (date, datetime)) else str(v)) for k, v in form.items()}
+                data = employee_from_form(form)
                 if existing:
                     save_employee(data, existing["id"])
                     updated += 1
                 elif conn.execute("SELECT 1 FROM users WHERE username = ?", (code,)).fetchone():
                     errors.append(f"সারি {bn_num(r_idx)}: আইডি '{code}' ব্যবহারকারী নাম হিসেবে আগেই আছে")
+                    continue
                 else:
                     save_employee(data)
                     added += 1
+                if "error" in payscale.plan(data):
+                    errors.append(f"সারি {bn_num(r_idx)} ({data['name_bn']}): বেতন হিসাব হয়নি — {payscale.plan(data)['error']}")
             conn.commit()
             flash(f"ইমপোর্ট সম্পন্ন: নতুন {bn_num(added)} জন, হালনাগাদ {bn_num(updated)} জন।", "ok")
-            for e in errors[:20]:
+            for e in errors[:30]:
                 flash(e, "warn")
             return redirect(url_for("employees"))
         return render_template("admin/import.html")
+
+    @app.route("/admin/departments/rename", methods=["POST"])
+    @admin_required
+    def department_rename():
+        old, new = request.form.get("old", "").strip(), request.form.get("new", "").strip()
+        if old and new:
+            n = get_db().execute("UPDATE employees SET department = ? WHERE department = ?", (new, old)).rowcount
+            get_db().commit()
+            flash(f"'{old}' শাখার {bn_num(n)} জনের শাখার নাম '{new}' করা হয়েছে।", "ok")
+        return redirect(url_for("employees", dept=new or old))
 
     # ---------- বেতন স্কেল ও ভাতা
 
     @app.route("/admin/payscale", methods=["GET", "POST"])
     @admin_required
-    def payscale():
-        conn = get_db()
+    def payscale_page():
         if request.method == "POST":
-            for grade in range(1, 21):
-                conn.execute("UPDATE pay_grades SET start_basic = ?, max_basic = ? WHERE grade = ?",
-                             (to_int(request.form.get(f"start_{grade}")), to_int(request.form.get(f"max_{grade}")), grade))
-            bands = []
-            for i in range(4):
-                bands.append({"from": to_int(request.form.get(f"hr_from_{i}")), "to": to_int(request.form.get(f"hr_to_{i}")),
-                              "pct": to_float(request.form.get(f"hr_pct_{i}")),
-                              "min": to_int(request.form.get(f"hr_min_{i}"))})
-            save_setting("house_rent_bands", bands)
-            for key in ["medical_below_50", "medical_50_plus", "education_per_child", "education_max_children",
-                        "tiffin_amount", "tiffin_from_grade", "transport_amount", "transport_from_grade",
-                        "revenue_stamp"]:
-                save_setting(key, to_int(request.form.get(key)))
-            for key in ["festival_pct", "boishakhi_pct", "increment_pct"]:
-                save_setting(key, to_float(request.form.get(key)))
             for key in ["office_name", "office_address"]:
                 save_setting(key, request.form.get(key, "").strip())
-            conn.commit()
-            flash("বেতন স্কেল ও ভাতার নিয়ম সংরক্ষিত হয়েছে। নতুন বেতন শিট এই নিয়মে তৈরি হবে।", "ok")
-            return redirect(url_for("payscale"))
-        return render_template("admin/payscale.html", grades=get_pay_grades())
-
-    @app.route("/admin/increment", methods=["POST"])
-    @admin_required
-    def annual_increment():
-        """সক্রিয় সকল কর্মচারীর মূল বেতনে বার্ষিক ইনক্রিমেন্ট (গ্রেডের সর্বোচ্চ সীমা পর্যন্ত, ১০ টাকায় পূর্ণ)।"""
-        conn = get_db()
-        pct = float(get_settings()["increment_pct"])
-        grades = get_pay_grades()
-        changed = capped = 0
-        for emp in conn.execute("SELECT id, grade, basic FROM employees WHERE status = 'active'").fetchall():
-            pg = grades.get(emp["grade"])
-            new = int(math.ceil(emp["basic"] * (1 + pct / 100) / 10) * 10)
-            if pg:
-                if new >= pg["max_basic"]:
-                    capped += 1
-                new = min(new, pg["max_basic"])
-            if new != emp["basic"]:
-                conn.execute("UPDATE employees SET basic = ? WHERE id = ?", (new, emp["id"]))
-                changed += 1
-        conn.commit()
-        flash(f"{bn_num(pct)}% বার্ষিক ইনক্রিমেন্ট দেওয়া হয়েছে: {bn_num(changed)} জনের মূল বেতন বেড়েছে, "
-              f"{bn_num(capped)} জন গ্রেডের সর্বোচ্চ ধাপে।", "ok")
-        return redirect(url_for("payscale"))
+            for key in ["festival_pct", "boishakhi_pct", "revenue_stamp"]:
+                save_setting(key, to_float(request.form.get(key)))
+            get_db().commit()
+            flash("সংরক্ষিত হয়েছে।", "ok")
+            return redirect(url_for("payscale_page"))
+        return render_template("admin/payscale.html", OLD=payscale.OLD, NEW=payscale.NEW, HR15=payscale.HR15,
+                               HR26=payscale.HR26)
 
     # ---------- মাসিক বেতন শিট
 
@@ -571,17 +594,24 @@ def register_routes(app):
         if existing:
             flash(f"{month_label(year, month)} এর বেতন শিট আগেই তৈরি হয়েছে।", "warn")
             return redirect(url_for("payroll_view", run_id=existing["id"]))
-        run_id = generate_run(year, month, bool(request.form.get("festival")), bool(request.form.get("boishakhi")),
-                              request.form.get("note", "").strip())
+        run_id, skipped = generate_run(year, month, bool(request.form.get("festival")), bool(request.form.get("boishakhi")),
+                                       request.form.get("note", "").strip(), bool(request.form.get("arrears")))
         flash(f"{month_label(year, month)} এর খসড়া বেতন শিট তৈরি হয়েছে। যাচাই করে 'চূড়ান্ত করুন' চাপুন।", "ok")
+        if skipped:
+            flash(f"{bn_num(len(skipped))} জনের গ্রেড/মূল বেতন অসম্পূর্ণ, তাই শিটে আসেননি: "
+                  + ", ".join(e["name_bn"] for e in skipped[:15]), "warn")
         return redirect(url_for("payroll_view", run_id=run_id))
 
     @app.route("/admin/payroll/<int:run_id>")
     @admin_required
     def payroll_view(run_id):
         run = get_run_or_404(run_id)
-        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY grade, code", (run_id,)).fetchall()
-        totals = {f: sum(s[f] for s in slips) for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net"]}
+        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY code", (run_id,)).fetchall()
+        totals = {f: round(sum(s[f] for s in slips), 2)
+                  for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net"]}
+        on_prl = {e["id"] for e in get_db().execute("SELECT id, dob, prl_date FROM employees")
+                  if (payscale.parse_date(e["prl_date"]) or payscale.prl_date(e["dob"]) or date.max)
+                  <= date(run["year"], run["month"], 1)}
         missing = get_db().execute(
             "SELECT * FROM employees WHERE status = 'active' AND id NOT IN (SELECT employee_id FROM payslips WHERE run_id = ?)",
             (run_id,)).fetchall()
@@ -589,13 +619,13 @@ def register_routes(app):
             "SELECT COALESCE(SUM(p.net),0) AS net FROM payroll_runs r JOIN payslips p ON p.run_id = r.id "
             "WHERE r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
         return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing,
-                               prev_net=prev["net"] if prev else 0)
+                               prev_net=prev["net"] if prev else 0, on_prl=on_prl)
 
     @app.route("/admin/payroll/<int:run_id>/excel")
     @admin_required
     def payroll_excel(run_id):
         run = get_run_or_404(run_id)
-        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY grade, code", (run_id,)).fetchall()
+        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY code", (run_id,)).fetchall()
         return xlsx_response(excel.payroll_workbook(run, slips, get_settings()),
                              f"salary-sheet-{run['year']}-{run['month']:02d}.xlsx")
 
@@ -640,8 +670,10 @@ def register_routes(app):
             settings = get_settings()
             for emp in conn.execute("SELECT * FROM employees WHERE status = 'active' AND id NOT IN "
                                     "(SELECT employee_id FROM payslips WHERE run_id = ?)", (run_id,)).fetchall():
-                insert_slip(run_id, emp, compute_components(emp, settings, run["year"], run["month"],
-                                                            run["include_festival"], run["include_boishakhi"]))
+                s = compute_components(emp, settings, run["year"], run["month"], run["include_festival"],
+                                       run["include_boishakhi"], run["include_arrears"])
+                if s:
+                    insert_slip(run_id, emp, s)
             conn.commit()
             flash("সকলের বেতন বর্তমান তথ্য অনুযায়ী পুনরায় হিসাব করা হয়েছে।", "ok")
         return redirect(url_for("payroll_view", run_id=run_id))
@@ -665,14 +697,16 @@ def register_routes(app):
             if not require_draft(run):
                 return redirect(url_for("payroll_view", run_id=run_id))
             if request.form.get("action") == "recalc":
-                regenerate_slip(run, slip)
-                get_db().commit()
-                flash("কর্মচারীর বর্তমান তথ্য অনুযায়ী পুনরায় হিসাব করা হয়েছে।", "ok")
+                if regenerate_slip(run, slip):
+                    get_db().commit()
+                    flash("কর্মচারীর বর্তমান তথ্য অনুযায়ী পুনরায় হিসাব করা হয়েছে।", "ok")
+                else:
+                    flash("কর্মচারীর গ্রেড/মূল বেতন অসম্পূর্ণ, তাই হিসাব করা যায়নি।", "error")
                 return redirect(url_for("payroll_view", run_id=run_id))
-            s = {f: to_int(request.form.get(f)) for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}
+            s = {f: round(to_float(request.form.get(f)), 2) for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}
             for kind in ("other_allowance", "other_deduction"):
                 names, amounts = request.form.getlist(f"{kind}_name"), request.form.getlist(f"{kind}_amount")
-                s[kind] = [{"name": n.strip(), "amount": to_int(a)} for n, a in zip(names, amounts) if n.strip()]
+                s[kind] = [{"name": n.strip(), "amount": round(to_float(a), 2)} for n, a in zip(names, amounts) if n.strip()]
             finalize_totals(s)
             get_db().execute(
                 f"UPDATE payslips SET {', '.join(f + ' = ?' for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS)}, "
@@ -726,15 +760,37 @@ def register_routes(app):
         emp = my_employee()
         slips = employee_slips(emp["id"], final_only=True)
         year = date.today().year
-        ytd = sum(s["net"] for s in slips if s["year"] == year)
+        ytd = round(sum(s["net"] for s in slips if s["year"] == year), 2)
         return render_template("me/dashboard.html", emp=emp, slips=slips, latest=slips[0] if slips else None,
-                               chart=list(reversed(slips[:12])), ytd=ytd, year=year)
+                               chart=list(reversed(slips[:12])), ytd=ytd, year=year, **pay_context(emp))
 
     @app.route("/me/profile")
     @login_required
     def my_profile():
         emp = my_employee()
-        return render_template("me/profile.html", emp=emp, age=age_on(emp["dob"], date.today()))
+        return render_template("me/profile.html", emp=emp, **pay_context(emp))
+
+    @app.route("/me/profile/edit", methods=["GET", "POST"])
+    @login_required
+    def my_profile_edit():
+        """কর্মচারী শুধু ব্যক্তিগত ও ব্যাংক তথ্য বদলাতে পারবেন; বেতন সংক্রান্ত কিছু নয়। প্রতিটি পরিবর্তনের রেকর্ড থাকে।"""
+        emp = my_employee()
+        if request.method == "POST":
+            conn = get_db()
+            changed = []
+            for field, label in SELF_EDIT_FIELDS:
+                new = (request.form.get(field) or "").strip() or None
+                if field == "name_bn" and not new:
+                    continue
+                if new != emp[field]:
+                    conn.execute(f"UPDATE employees SET {field} = ? WHERE id = ?", (new, emp["id"]))
+                    conn.execute("INSERT INTO employee_changes (employee_id, field, old_value, new_value) "
+                                 "VALUES (?, ?, ?, ?)", (emp["id"], label, emp[field], new))
+                    changed.append(label)
+            conn.commit()
+            flash(("হালনাগাদ হয়েছে: " + ", ".join(changed)) if changed else "কোনো পরিবর্তন হয়নি।", "ok")
+            return redirect(url_for("my_profile"))
+        return render_template("me/profile_edit.html", emp=emp, fields=SELF_EDIT_FIELDS)
 
     @app.route("/me/history.xlsx")
     @login_required

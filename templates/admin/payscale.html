@@ -2,56 +2,71 @@
 {% block title %}বেতন স্কেল ও ভাতা{% endblock %}
 {% block content %}
 <div class="topbar"><div><h1>বেতন স্কেল ও ভাতার নিয়ম</h1>
-  <div class="muted">জাতীয় বেতন স্কেল ২০২৬ অনুযায়ী প্রাথমিক মান বসানো আছে। সরকারি গেজেট/প্রজ্ঞাপনের সাথে মিলিয়ে প্রয়োজনে সংশোধন করুন।</div></div></div>
-<form method="post">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="grid g2">
-    <fieldset><legend>গ্রেডভিত্তিক মূল বেতন (টাকা)</legend>
-      <table>
-        <thead><tr><th>গ্রেড</th><th>প্রারম্ভিক</th><th>সর্বোচ্চ</th></tr></thead>
-        <tbody>{% for g, pg in grades.items() %}
-          <tr><td>গ্রেড-{{ g|bn }}</td><td><input name="start_{{ g }}" value="{{ pg.start_basic }}" inputmode="numeric"></td><td><input name="max_{{ g }}" value="{{ pg.max_basic }}" inputmode="numeric"></td></tr>
-        {% endfor %}</tbody>
-      </table>
-    </fieldset>
-    <div>
-      <fieldset><legend>অফিসের তথ্য</legend>
-        <div class="field"><label>প্রতিষ্ঠানের নাম</label><input name="office_name" value="{{ settings.office_name }}"></div>
-        <div class="field"><label>ঠিকানা</label><input name="office_address" value="{{ settings.office_address }}"></div>
-      </fieldset>
-      <fieldset><legend>বাড়ি ভাড়া ভাতা (মূল বেতনের %)</legend>
-        <table><thead><tr><th>গ্রেড হতে</th><th>গ্রেড পর্যন্ত</th><th>হার %</th><th>সর্বনিম্ন টাকা</th></tr></thead><tbody>
-          {% for b in settings.house_rent_bands %}{% set i = loop.index0 %}
-          <tr><td><input name="hr_from_{{ i }}" value="{{ b.from }}"></td><td><input name="hr_to_{{ i }}" value="{{ b.to }}"></td><td><input name="hr_pct_{{ i }}" value="{{ b.pct }}"></td><td><input name="hr_min_{{ i }}" value="{{ b.min }}"></td></tr>
-          {% endfor %}</tbody></table>
-        <p class="hint">নারায়ণগঞ্জ সিটি কর্পোরেশন এলাকার জন্য প্রযোজ্য হার গেজেট থেকে নিশ্চিত করুন।</p>
-      </fieldset>
-      <fieldset><legend>অন্যান্য ভাতা</legend>
-        <div class="grid g2">
-          <div class="field"><label>চিকিৎসা ভাতা (৫০ বছর পর্যন্ত)</label><input name="medical_below_50" value="{{ settings.medical_below_50 }}"></div>
-          <div class="field"><label>চিকিৎসা ভাতা (৫০ বছরের বেশি)</label><input name="medical_50_plus" value="{{ settings.medical_50_plus }}"></div>
-          <div class="field"><label>শিক্ষা সহায়ক ভাতা (প্রতি সন্তান)</label><input name="education_per_child" value="{{ settings.education_per_child }}"></div>
-          <div class="field"><label>সর্বোচ্চ সন্তান সংখ্যা</label><input name="education_max_children" value="{{ settings.education_max_children }}"></div>
-          <div class="field"><label>টিফিন ভাতা (টাকা)</label><input name="tiffin_amount" value="{{ settings.tiffin_amount }}"></div>
-          <div class="field"><label>টিফিন ভাতা — যে গ্রেড থেকে নিচে</label><input name="tiffin_from_grade" value="{{ settings.tiffin_from_grade }}"><div class="hint">যেমন ১১ = গ্রেড ১১–২০</div></div>
-          <div class="field"><label>যাতায়াত ভাতা (টাকা)</label><input name="transport_amount" value="{{ settings.transport_amount }}"></div>
-          <div class="field"><label>যাতায়াত ভাতা — যে গ্রেড থেকে নিচে</label><input name="transport_from_grade" value="{{ settings.transport_from_grade }}"></div>
-          <div class="field"><label>উৎসব ভাতা (মূল বেতনের %)</label><input name="festival_pct" value="{{ settings.festival_pct }}"></div>
-          <div class="field"><label>বাংলা নববর্ষ ভাতা (মূল বেতনের %)</label><input name="boishakhi_pct" value="{{ settings.boishakhi_pct }}"></div>
-          <div class="field"><label>রাজস্ব স্ট্যাম্প কর্তন (টাকা)</label><input name="revenue_stamp" value="{{ settings.revenue_stamp }}"></div>
-          <div class="field"><label>বার্ষিক ইনক্রিমেন্ট (%)</label><input name="increment_pct" value="{{ settings.increment_pct }}"></div>
-        </div>
-      </fieldset>
-      <button class="primary" type="submit">সংরক্ষণ করুন</button>
-    </div>
-  </div>
-</form>
+  <div class="muted">চাকরি (বেতন ও ভাতাদি) আদেশ, ২০২৬ · নারায়ণগঞ্জ সিটি কর্পোরেশন এলাকা — "নাসিক বেতন হিসাব ২০২৬" ক্যালকুলেটরের নিয়ম</div></div></div>
 
-<div class="card" style="margin-top:18px">
-  <h2>বার্ষিক ইনক্রিমেন্ট</h2>
-  <p>সকল সক্রিয় কর্মচারীর মূল বেতন {{ settings.increment_pct|pct }}% বাড়ানো হবে (১০ টাকায় পূর্ণ করে, গ্রেডের সর্বোচ্চ সীমা পর্যন্ত)। সাধারণত প্রতি বছর ১ জুলাই একবার প্রয়োগ করুন।</p>
-  <form method="post" action="{{ url_for('annual_increment') }}" onsubmit="return confirm('সকল সক্রিয় কর্মচারীর মূল বেতনে ইনক্রিমেন্ট দেবেন? এটি একবারই করা উচিত।')">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><button>ইনক্রিমেন্ট প্রয়োগ করুন</button>
-  </form>
+<div class="card">
+  <h2>কোন মাসে কোন নিয়ম</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>সময়</th><th>মূল বেতন</th><th>ভাতা</th><th>বিশেষ সুবিধা (মহার্ঘ)</th></tr></thead>
+    <tbody>
+      <tr><td>৩০-০৬-২০২৬ পর্যন্ত</td><td>২০১৫ স্কেল</td><td>২০১৫ আদেশ</td><td>১–৯ গ্রেড ১০%, ১০–২০ গ্রেড ১৫% (ন্যূনতম ১,০০০)</td></tr>
+      <tr><td>জুলাই–ডিসেম্বর ২০২৬</td><td>১ম কিস্তি: ১–৯ গ্রেড বৃদ্ধির ৪০%, ১০–২০ গ্রেড ৫০% + ইনক্রিমেন্ট</td><td rowspan="3">৩০-০৬-২০২৬ এর অঙ্কে (২০১৫ আদেশ)</td><td rowspan="4">বিলুপ্ত</td></tr>
+      <tr><td>জানুয়ারি–জুন ২০২৭</td><td>২য় কিস্তি: আরও ৩০% / ২৫%</td></tr>
+      <tr><td>জুলাই–ডিসেম্বর ২০২৭</td><td>পূর্ণ স্কেল + ইনক্রিমেন্ট</td></tr>
+      <tr><td>জানুয়ারি ২০২৮ থেকে</td><td>পূর্ণ স্কেল; প্রতি ১ জুলাই (২০২৮ থেকে) পরবর্তী ধাপ</td><td>২০২৬ আদেশের নতুন হার</td></tr>
+    </tbody>
+  </table></div>
+  <p class="hint">জুলাই–সেপ্টেম্বর ২০২৬ এ ২০১৫ স্কেলে বেতন দেওয়া হয়ে থাকলে তার বকেয়া একটি মাসের শিটে "বকেয়া যুক্ত করুন" টিক দিয়ে দেওয়া যায়।</p>
 </div>
+
+<div class="card">
+  <h2>ভাতার হার</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>ভাতা</th><th>৩১-১২-২০২৭ পর্যন্ত (২০১৫ আদেশ, ৩০-০৬-২০২৬ এর অঙ্কে)</th><th>০১-০১-২০২৮ থেকে (২০২৬ আদেশ)</th></tr></thead>
+    <tbody>
+      <tr><td>বাড়িভাড়া</td><td>মূল বেতনের স্ল্যাব অনুযায়ী ৫৫% / ৫০% / ৪৫% / ৪০%, ন্যূনতমসহ</td><td>গ্রেড অনুযায়ী ৫০% / ৪০% / ৩৫% / ৩০%, ন্যূনতম নেই</td></tr>
+      <tr><td>চিকিৎসা ভাতা</td><td>১,৫০০</td><td>৫০ বছর পর্যন্ত ৩,০০০; এর বেশি বয়সে ৪,০০০</td></tr>
+      <tr><td>টিফিন ভাতা (১১–২০ গ্রেড)</td><td>২০০</td><td>৫০০</td></tr>
+      <tr><td>যাতায়াত ভাতা (১১–২০ গ্রেড)</td><td>৩০০</td><td>৬০০</td></tr>
+      <tr><td>শিক্ষা সহায়ক ভাতা</td><td>সন্তান প্রতি ৫০০, সর্বোচ্চ ১,০০০</td><td>সন্তান প্রতি ৫০০, সর্বোচ্চ ১,০০০</td></tr>
+      <tr><td>মোবাইল ভাতা</td><td>নেই</td><td>৫ম গ্রেড ও তদূর্ধ্ব ৫০০; ৬–২০ গ্রেড ১৫০</td></tr>
+      <tr><td>ধোলাই ভাতা (প্রযোজ্য পদে)</td><td>১০০</td><td>৩০০</td></tr>
+      <tr><td>ভবিষ্য তহবিল (PF), প্রযোজ্য ক্ষেত্রে</td><td colspan="2">অফিস অংশ মূল বেতনের ১০% আয়ে; কর্তন: অফিস অংশ ১০% + নিজ অংশ ১০%</td></tr>
+    </tbody>
+  </table></div>
+  <div class="grid g2" style="margin-top:14px">
+    <div class="table-wrap"><table>
+      <thead><tr><th>মূল বেতন (২০১৫ আদেশ, অনু. ১৭(৭))</th><th>বাড়িভাড়া</th></tr></thead>
+      <tbody>{% for upto, rate, mn, label in HR15 %}<tr><td>{{ label }}</td><td>{{ (rate * 100)|int|bn }}%, ন্যূনতম {{ mn|taka }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>গ্রেড (২০২৬ আদেশ, অনু. ১৫(৬))</th><th>বাড়িভাড়া</th></tr></thead>
+      <tbody>{% for a, b, rate in HR26 %}<tr><td>গ্রেড-{{ b|bn }} থেকে গ্রেড-{{ a|bn }}</td><td>{{ (rate * 100)|int|bn }}%</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>বেতন স্কেলের ধাপ</h2>
+  <details><summary>২০১৫ ও ২০২৬ স্কেলের সব ধাপ দেখুন</summary>
+    <div class="table-wrap" style="margin-top:10px"><table>
+      <thead><tr><th>গ্রেড</th><th>২০১৫ স্কেল</th><th>২০২৬ স্কেল</th></tr></thead>
+      <tbody>{% for g in range(1, 21) %}<tr><td>গ্রেড-{{ g|bn }}</td>
+        <td class="small">{{ OLD[g] | map('taka') | join(', ') }}</td><td class="small">{{ NEW[g] | map('taka') | join(', ') }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </details>
+</div>
+
+<form class="card" method="post" style="max-width:720px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2>অফিস ও অন্যান্য সেটিং</h2>
+  <div class="grid g2">
+    <div class="field"><label>প্রতিষ্ঠানের নাম</label><input name="office_name" value="{{ settings.office_name }}"></div>
+    <div class="field"><label>ঠিকানা</label><input name="office_address" value="{{ settings.office_address }}"></div>
+    <div class="field"><label>উৎসব ভাতা (মূল বেতনের %)</label><input name="festival_pct" value="{{ settings.festival_pct }}"></div>
+    <div class="field"><label>বাংলা নববর্ষ ভাতা (মূল বেতনের %)</label><input name="boishakhi_pct" value="{{ settings.boishakhi_pct }}"></div>
+    <div class="field"><label>রাজস্ব স্ট্যাম্প কর্তন (টাকা, প্রতি মাসে)</label><input name="revenue_stamp" value="{{ settings.revenue_stamp }}"><div class="hint">না কাটলে ০ দিন</div></div>
+  </div>
+  <button class="primary" type="submit">সংরক্ষণ করুন</button>
+</form>
 {% endblock %}

@@ -15,12 +15,15 @@ def bn_num(value):
 
 
 def bn_taka(value):
-    """দক্ষিণ এশীয় পদ্ধতিতে কমা (১২,৩৪,৫৬৭)।"""
+    """দক্ষিণ এশীয় পদ্ধতিতে কমা (১২,৩৪,৫৬৭.৫০); পয়সা থাকলে দুই ঘর দশমিক।"""
     if value is None or value == "":
         return ""
-    n = int(value)
-    sign = "-" if n < 0 else ""
-    s = str(abs(n))
+    x = round(float(value), 2)
+    sign = "−" if x < 0 else ""
+    x = abs(x)
+    whole = int(x)
+    paisa = round((x - whole) * 100)
+    s = str(whole)
     if len(s) > 3:
         head, tail = s[:-3], s[-3:]
         groups = []
@@ -30,6 +33,8 @@ def bn_taka(value):
         if head:
             groups.insert(0, head)
         s = ",".join(groups) + "," + tail
+    if paisa:
+        s += f".{paisa:02d}"
     return (sign + s).translate(BN_DIGITS)
 
 

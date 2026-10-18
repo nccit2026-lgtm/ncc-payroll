@@ -10,25 +10,10 @@
   </div>
 </div>
 
-{% set age = age %}
 {% include "_profile.html" %}
+{% include "_fixation.html" %}
 
-<div class="grid g2" id="salary">
-  <div class="card">
-    <h2>বর্তমান মাসিক বেতন কাঠামো</h2>
-    <p class="hint" style="margin-top:-8px">বর্তমান তথ্য ও নিয়ম অনুযায়ী হিসাব (উৎসব/নববর্ষ ভাতা ছাড়া)</p>
-    <table class="kv">
-      {% for k in ['basic', 'house_rent', 'medical', 'education', 'tiffin', 'transport'] %}
-        <tr><th>{{ FIELD_LABELS[k] }}{% if emp['ovr_' ~ k] is defined and emp['ovr_' ~ k] is not none %} <span class="badge draft">নির্ধারিত</span>{% endif %}</th><td class="num">{{ preview[k]|taka }}</td></tr>
-      {% endfor %}
-      {% for i in preview.other_allowance %}<tr><th>{{ i.name }}</th><td class="num">{{ i.amount|taka }}</td></tr>{% endfor %}
-      <tr><th><b>মোট বেতন</b></th><td class="num"><b>{{ preview.gross|taka }}</b></td></tr>
-      <tr><th>জিপিএফ ({{ emp.gpf_pct|pct }}%)</th><td class="num">− {{ preview.gpf|taka }}</td></tr>
-      <tr><th>রাজস্ব স্ট্যাম্প</th><td class="num">− {{ preview.revenue_stamp|taka }}</td></tr>
-      {% for i in preview.other_deduction %}<tr><th>{{ i.name }}</th><td class="num">− {{ i.amount|taka }}</td></tr>{% endfor %}
-      <tr><th><b>নিট প্রদেয়</b></th><td class="num"><b>{{ preview.net|taka }}</b></td></tr>
-    </table>
-  </div>
+<div id="salary">
   <div class="card">
     <h2>অতিরিক্ত ভাতা ও কর্তন</h2>
     <p class="hint" style="margin-top:-8px">যেমন: দায়িত্ব ভাতা, মোবাইল ভাতা, গৃহ নির্মাণ ঋণের কিস্তি, আয়কর, কল্যাণ তহবিল। প্রতি মাসের বেতন শিটে স্বয়ংক্রিয়ভাবে বসবে।</p>
@@ -58,6 +43,16 @@
       <input type="hidden" name="csrf" value="{{ csrf }}"><button class="sm">পাসওয়ার্ড রিসেট</button></form></div>
   {% if account %}<p style="margin:0">লগইন আইডি: <b>{{ account.username }}</b> {% if account.must_change %}<span class="badge draft">প্রাথমিক পাসওয়ার্ড — এখনো পরিবর্তন করেননি</span>{% endif %}</p>{% endif %}
 </div>
+
+{% if changes %}
+<div class="card">
+  <h2>কর্মচারীর নিজের করা পরিবর্তন</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>সময়</th><th>তথ্য</th><th>আগে</th><th>এখন</th></tr></thead>
+    <tbody>{% for c in changes %}<tr><td class="small">{{ c.changed_at|bn }}</td><td>{{ c.field }}</td><td class="muted">{{ c.old_value or '—' }}</td><td><b>{{ c.new_value or '—' }}</b></td></tr>{% endfor %}</tbody>
+  </table></div>
+</div>
+{% endif %}
 
 <h2>বেতন ইতিহাস</h2>
 {% set show_status = true %}
