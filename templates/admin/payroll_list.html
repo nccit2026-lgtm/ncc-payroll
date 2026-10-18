@@ -36,7 +36,7 @@
     <div class="inline-form" data-for="festival" style="margin-top:10px">
       <div class="field"><label>ধর্ম</label><select name="religion" id="religion">{% for r in RELIGIONS if r != 'অন্যান্য' %}<option value="{{ r }}" data-mult="{{ FESTIVAL_MULTIPLIER[r] }}">{{ r }}{{ ' — ঈদ' if r == 'ইসলাম' }}</option>{% endfor %}</select></div>
       <div class="field" style="width:150px"><label>মূল বেতনের কত গুণ</label><input name="multiplier" id="mult" value="1" inputmode="decimal"></div>
-      <div class="hint" style="flex-basis:100%">ঈদ (ইসলাম) = এক মূল বেতন; হিন্দু, বৌদ্ধ, খ্রিস্টান = দুই মূল বেতন। শুধু নির্বাচিত ধর্মের কর্মচারীরা পাবেন।</div>
+      <div class="hint" style="flex-basis:100%">ঈদ (ইসলাম) = এক মূল বেতন; হিন্দু, বৌদ্ধ, খ্রিস্টান = দুই মূল বেতন। শুধু নির্বাচিত ধর্মের কর্মচারীরা পাবেন। ডিসেম্বর ২০২৭ পর্যন্ত ৩০-০৬-২০২৬ এর মূল বেতন ধরে, জানুয়ারি ২০২৮ থেকে নতুন মূল বেতন ধরে।</div>
     </div>
     <div class="inline-form" data-for="other" style="margin-top:10px">
       <div class="field"><label>মূল বেতনের %</label><input name="pct" inputmode="decimal" style="width:120px"></div>

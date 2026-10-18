@@ -286,7 +286,7 @@ def test_bonus_religion_filters_font():
         rels = [r[0] for r in get_db().execute("SELECT religion FROM employees ORDER BY id")]
     assert rels == ["ইসলাম", "হিন্দু", "বৌদ্ধ", "খ্রিস্টান", None]  # বানানভেদ ঠিক করে নেওয়া
 
-    # ঈদ (ইসলাম): শুধু মুসলিম, এক মূল বেতন (মার্চ ২০২৭ = ২য় কিস্তির মূল বেতন)
+    # ঈদ (ইসলাম): শুধু মুসলিম, এক মূল বেতন — ২০২৮ এর আগে ৩০-০৬-২০২৬ এর মূল বেতন (১৯,৮১০) ধরে
     r = post(c, "/admin/payroll/new", {"kind": "festival", "year": "2027", "month": "3", "religion": "ইসলাম",
                                        "multiplier": "1", "title": "ঈদুল ফিতর উৎসব ভাতা"}, follow_redirects=True)
     html = r.get_data(as_text=True)
@@ -296,14 +296,14 @@ def test_bonus_religion_filters_font():
         s = get_db().execute("SELECT * FROM payslips WHERE run_id = ?", (run["id"],)).fetchall()
         assert len(s) == 1 and s[0]["name_bn"] == "রহিম"
         assert (s[0]["festival"], s[0]["basic"], s[0]["house_rent"], s[0]["net"], s[0]["ref_basic"]) == \
-            (32002.5, 0, 0, 32002.5, 32002.5)
+            (19810, 0, 0, 19810, 19810)
     # দুর্গাপূজা (হিন্দু): দুই মূল বেতন; একই মাসে বেতন শিটও আলাদাভাবে তৈরি করা যায়
     post(c, "/admin/payroll/new", {"kind": "festival", "year": "2026", "month": "10", "religion": "হিন্দু", "multiplier": "2"})
     post(c, "/admin/payroll/new", {"kind": "salary", "year": "2026", "month": "10"})
     with app.app_context():
         puja = get_db().execute("SELECT p.* FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
                                 "WHERE r.religion = 'হিন্দু'").fetchall()
-        assert [(x["name_bn"], x["festival"]) for x in puja] == [("প্রদীপ", 57010)]
+        assert [(x["name_bn"], x["festival"]) for x in puja] == [("প্রদীপ", 39620)]
         assert get_db().execute("SELECT COUNT(*) FROM payroll_runs WHERE year = 2026 AND month = 10").fetchone()[0] == 2
 
     # বকেয়া আলাদা শিটে; দ্বিতীয়বার দেওয়া যাবে না
@@ -323,7 +323,13 @@ def test_bonus_religion_filters_font():
         assert [x[0] for x in risk] == [1500] * 5
         bo = get_db().execute("SELECT p.boishakhi FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
                               "WHERE r.kind = 'boishakhi' AND p.name_bn = 'রহিম'").fetchone()[0]
-        assert bo == round(32002.5 * 0.2, 2)
+        assert bo == round(19810 * 0.2, 2)
+    # ২০২৮ থেকে উৎসব ভাতা নতুন মূল বেতনে
+    post(c, "/admin/payroll/new", {"kind": "festival", "year": "2028", "month": "3", "religion": "ইসলাম", "multiplier": "1"})
+    with app.app_context():
+        eid28 = get_db().execute("SELECT p.festival FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                                 "WHERE r.year = 2028 AND p.name_bn = 'রহিম'").fetchone()[0]
+        assert eid28 == 37300
         salary_run = get_db().execute("SELECT id FROM payroll_runs WHERE kind = 'salary'").fetchone()[0]
 
     # শিট দেখা ও Excel এর আগে ফিল্টার: শাখা + গ্রেড, সাজানো, ভাগ ছাড়া

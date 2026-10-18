@@ -184,6 +184,14 @@ def basic_for(emp, pl, y, m):
     return r2(pl["P3"] + steps[j] - steps[res["i27"]])
 
 
+def allowance_basic(emp, pl, y, m):
+    """ভাতার ভিত্তি মূল বেতন: ৩১-১২-২০২৭ পর্যন্ত ৩০-০৬-২০২৬ এর মূল বেতন, ০১-০১-২০২৮ থেকে সেই মাসের মূল বেতন।
+    (উৎসব ভাতা, নববর্ষ ভাতা ও % হিসাবের অন্যান্য ভাতায় ব্যবহৃত)"""
+    if (y, m) < (2028, 1) and not pl.get("new_joiner"):
+        return pl["res"]["basic"]
+    return basic_for(emp, pl, y, m)
+
+
 def over_50(dob, on):
     d = parse_date(dob)
     if not d:

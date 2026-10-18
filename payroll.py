@@ -2,7 +2,7 @@
 import json
 
 from db import get_db, get_settings
-from payscale import age_on_date, arrears, month_components, phase_of, r2
+from payscale import age_on_date, allowance_basic, arrears, month_components, phase_of, r2
 
 ALLOWANCE_FIELDS = ["basic", "house_rent", "medical", "education", "tiffin", "transport", "mobile", "wash", "special",
                     "pf_office", "festival", "boishakhi"]
@@ -48,7 +48,7 @@ def age_on(dob, on):
 def compute_components(emp, settings, year, month, include_festival=False, include_boishakhi=False,
                        include_arrears=False):
     """একজন কর্মচারীর এক মাসের সম্পূর্ণ বেতন বিবরণী; হিসাব করা না গেলে (তথ্য অসম্পূর্ণ) None।"""
-    c, _plan = month_components(emp, year, month)
+    c, plan = month_components(emp, year, month)
     if c is None:
         return None
     items = get_db().execute(
@@ -66,7 +66,7 @@ def compute_components(emp, settings, year, month, include_festival=False, inclu
             if a["pf_total"]:
                 other_a.append({"name": "বকেয়ার উপর অফিস প্রদত্ত PF", "amount": a["pf_total"]})
                 other_d.append({"name": "বকেয়ার উপর PF (অফিস + নিজ অংশ)", "amount": r2(2 * a["pf_total"])})
-    b = c["basic"]
+    b = allowance_basic(emp, plan, year, month)  # উৎসব/নববর্ষ ভাতার ভিত্তি
     slip = {
         **{k: c[k] for k in ["basic", "house_rent", "medical", "education", "tiffin", "transport", "mobile", "wash",
                              "special", "pf_office", "pf_fund", "pf_own"]},
@@ -91,10 +91,10 @@ def compute_extra(emp, run, settings):
             return None, "ধর্ম দেওয়া নেই"
         if emp["religion"] != run["religion"]:
             return None, ""  # অন্য ধর্ম — এই উৎসব ভাতা প্রযোজ্য নয়
-    c, _plan = month_components(emp, run["year"], run["month"])
+    c, plan = month_components(emp, run["year"], run["month"])
     if c is None:
         return None, "গ্রেড/মূল বেতন অসম্পূর্ণ"
-    base = c["basic"]
+    base = allowance_basic(emp, plan, run["year"], run["month"])
     slip = _empty_slip()
     slip["ref_basic"] = base
     slip["phase"] = run["title"] or RUN_KINDS[kind]
