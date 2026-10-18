@@ -6,7 +6,7 @@ from payscale import age_on_date, arrears, month_components, phase_of, r2
 
 ALLOWANCE_FIELDS = ["basic", "house_rent", "medical", "education", "tiffin", "transport", "mobile", "wash", "special",
                     "pf_office", "festival", "boishakhi"]
-DEDUCTION_FIELDS = ["pf_fund", "pf_own", "revenue_stamp"]
+DEDUCTION_FIELDS = ["pf_fund", "pf_own"]  # রাজস্ব স্ট্যাম্প কাটা হয় না
 
 FIELD_LABELS = {
     "basic": "মূল বেতন",
@@ -60,7 +60,6 @@ def compute_components(emp, settings, year, month, include_festival=False, inclu
                              "special", "pf_office", "pf_fund", "pf_own"]},
         "festival": r2(b * float(settings["festival_pct"]) / 100) if include_festival else 0,
         "boishakhi": r2(b * float(settings["boishakhi_pct"]) / 100) if include_boishakhi else 0,
-        "revenue_stamp": float(settings["revenue_stamp"] or 0),
         "other_allowance": other_a,
         "other_deduction": other_d,
         "phase": phase_of(year, month)[0],

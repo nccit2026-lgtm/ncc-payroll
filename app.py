@@ -566,7 +566,7 @@ def register_routes(app):
         if request.method == "POST":
             for key in ["office_name", "office_address"]:
                 save_setting(key, request.form.get(key, "").strip())
-            for key in ["festival_pct", "boishakhi_pct", "revenue_stamp"]:
+            for key in ["festival_pct", "boishakhi_pct"]:
                 save_setting(key, to_float(request.form.get(key)))
             get_db().commit()
             flash("সংরক্ষিত হয়েছে।", "ok")

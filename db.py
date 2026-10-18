@@ -10,7 +10,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SETTINGS = {
     "office_name": "নারায়ণগঞ্জ সিটি কর্পোরেশন",
     "office_address": "নগর ভবন, নারায়ণগঞ্জ",
-    "revenue_stamp": 0,
     "festival_pct": 100,
     "boishakhi_pct": 20,
 }

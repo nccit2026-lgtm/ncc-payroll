@@ -33,7 +33,10 @@ def test_full_flow():
     db = os.path.join(tempfile.mkdtemp(), "t.db")
     app = create_app(db)
     c = app.test_client()
-    from db import get_db
+    from db import get_db, save_setting
+    with app.app_context():  # আগের সংস্করণে সংরক্ষিত ১০ টাকা স্ট্যাম্প — এখন আর কাটা হয় না
+        save_setting("revenue_stamp", 10)
+        get_db().commit()
 
     assert c.get("/admin").status_code == 302
     r = post(c, "/login", {"username": "admin", "password": "admin123"})
@@ -95,7 +98,7 @@ def test_full_flow():
 
     # একজনের বেতন হাতে সংশোধন (পয়সাসহ)
     form = {f: "0" for f in ["basic", "house_rent", "medical", "education", "tiffin", "transport", "mobile", "wash",
-                             "special", "pf_office", "festival", "boishakhi", "pf_fund", "pf_own", "revenue_stamp"]}
+                             "special", "pf_office", "festival", "boishakhi", "pf_fund", "pf_own"]}
     form.update({"basic": "20000.50", "other_allowance_name": "বকেয়া", "other_allowance_amount": "500"})
     post(c, f"/admin/payroll/{run_id}/slip/{slip_id}/edit", form)
     with app.app_context():
