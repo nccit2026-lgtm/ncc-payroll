@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card"><h1>{{ code|bn }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('index') }}">প্রথম পাতায় ফিরুন</a></div>
+{% endblock %}
+{% block bare %}
+<div class="login-wrap"><div class="login-card"><h1>{{ code|bn }}</h1><p>{{ message }}</p><a class="btn" href="{{ url_for('login') }}">লগইন</a></div></div>
+{% endblock %}

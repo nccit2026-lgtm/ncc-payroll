@@ -1,0 +1,22 @@
+{% macro bar_chart(items, value_key, empty_text) %}
+  {% if items %}
+    {% set mx = items | map(attribute=value_key) | max %}
+    <div class="bars" role="img" aria-label="মাসভিত্তিক বেতনের বার চার্ট">
+      {% for it in items %}
+        {% set v = it[value_key] %}
+        <div class="bar {{ 'draft' if it.status == 'draft' }}" title="{{ month_label(it.year, it.month) }}: {{ v|taka }} টাকা">
+          <em>{{ (v / 100000) | round(1) | bn }}ল</em>
+          <i style="height: {{ (v / mx * 100) if mx else 0 }}%"></i>
+          <span>{{ MONTHS_BN[it.month][:3] }} {{ (it.year % 100)|bn }}</span>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="hint">অঙ্ক লাখ টাকায় (ল)। ডোরাকাটা বার = খসড়া শিট।</p>
+  {% else %}
+    <p class="muted">{{ empty_text }}</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro status_badge(status) -%}
+  {% if status == 'final' %}<span class="badge final">চূড়ান্ত</span>{% else %}<span class="badge draft">খসড়া</span>{% endif %}
+{%- endmacro %}

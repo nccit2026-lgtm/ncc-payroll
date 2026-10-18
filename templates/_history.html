@@ -1,0 +1,19 @@
+{# মাসভিত্তিক বেতন ইতিহাস টেবিল #}
+{% from "_macros.html" import status_badge %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th>মাস</th>{% if show_status %}<th>অবস্থা</th>{% endif %}<th class="num">মূল বেতন</th><th class="num">মোট বেতন</th><th class="num">মোট কর্তন</th><th class="num">নিট প্রাপ্তি</th><th></th></tr></thead>
+  <tbody>
+  {% for s in slips %}
+    <tr>
+      <td>{{ month_label(s.year, s.month) }}</td>{% if show_status %}<td>{{ status_badge(s.status) }}</td>{% endif %}
+      <td class="num">{{ s.basic|taka }}</td><td class="num">{{ s.gross|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td>
+      <td class="num"><b>{{ s.net|taka }}</b></td>
+      <td><a class="btn sm" href="{{ url_for('payslip', slip_id=s.id) }}">বিবরণী</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">এখনো কোনো বেতনের রেকর্ড নেই।</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

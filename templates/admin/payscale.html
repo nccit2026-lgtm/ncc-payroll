@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}বেতন স্কেল ও ভাতা{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>বেতন স্কেল ও ভাতার নিয়ম</h1>
+  <div class="muted">জাতীয় বেতন স্কেল ২০২৬ অনুযায়ী প্রাথমিক মান বসানো আছে। সরকারি গেজেট/প্রজ্ঞাপনের সাথে মিলিয়ে প্রয়োজনে সংশোধন করুন।</div></div></div>
+<form method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid g2">
+    <fieldset><legend>গ্রেডভিত্তিক মূল বেতন (টাকা)</legend>
+      <table>
+        <thead><tr><th>গ্রেড</th><th>প্রারম্ভিক</th><th>সর্বোচ্চ</th></tr></thead>
+        <tbody>{% for g, pg in grades.items() %}
+          <tr><td>গ্রেড-{{ g|bn }}</td><td><input name="start_{{ g }}" value="{{ pg.start_basic }}" inputmode="numeric"></td><td><input name="max_{{ g }}" value="{{ pg.max_basic }}" inputmode="numeric"></td></tr>
+        {% endfor %}</tbody>
+      </table>
+    </fieldset>
+    <div>
+      <fieldset><legend>অফিসের তথ্য</legend>
+        <div class="field"><label>প্রতিষ্ঠানের নাম</label><input name="office_name" value="{{ settings.office_name }}"></div>
+        <div class="field"><label>ঠিকানা</label><input name="office_address" value="{{ settings.office_address }}"></div>
+      </fieldset>
+      <fieldset><legend>বাড়ি ভাড়া ভাতা (মূল বেতনের %)</legend>
+        <table><thead><tr><th>গ্রেড হতে</th><th>গ্রেড পর্যন্ত</th><th>হার %</th><th>সর্বনিম্ন টাকা</th></tr></thead><tbody>
+          {% for b in settings.house_rent_bands %}{% set i = loop.index0 %}
+          <tr><td><input name="hr_from_{{ i }}" value="{{ b.from }}"></td><td><input name="hr_to_{{ i }}" value="{{ b.to }}"></td><td><input name="hr_pct_{{ i }}" value="{{ b.pct }}"></td><td><input name="hr_min_{{ i }}" value="{{ b.min }}"></td></tr>
+          {% endfor %}</tbody></table>
+        <p class="hint">নারায়ণগঞ্জ সিটি কর্পোরেশন এলাকার জন্য প্রযোজ্য হার গেজেট থেকে নিশ্চিত করুন।</p>
+      </fieldset>
+      <fieldset><legend>অন্যান্য ভাতা</legend>
+        <div class="grid g2">
+          <div class="field"><label>চিকিৎসা ভাতা (৫০ বছর পর্যন্ত)</label><input name="medical_below_50" value="{{ settings.medical_below_50 }}"></div>
+          <div class="field"><label>চিকিৎসা ভাতা (৫০ বছরের বেশি)</label><input name="medical_50_plus" value="{{ settings.medical_50_plus }}"></div>
+          <div class="field"><label>শিক্ষা সহায়ক ভাতা (প্রতি সন্তান)</label><input name="education_per_child" value="{{ settings.education_per_child }}"></div>
+          <div class="field"><label>সর্বোচ্চ সন্তান সংখ্যা</label><input name="education_max_children" value="{{ settings.education_max_children }}"></div>
+          <div class="field"><label>টিফিন ভাতা (টাকা)</label><input name="tiffin_amount" value="{{ settings.tiffin_amount }}"></div>
+          <div class="field"><label>টিফিন ভাতা — যে গ্রেড থেকে নিচে</label><input name="tiffin_from_grade" value="{{ settings.tiffin_from_grade }}"><div class="hint">যেমন ১১ = গ্রেড ১১–২০</div></div>
+          <div class="field"><label>যাতায়াত ভাতা (টাকা)</label><input name="transport_amount" value="{{ settings.transport_amount }}"></div>
+          <div class="field"><label>যাতায়াত ভাতা — যে গ্রেড থেকে নিচে</label><input name="transport_from_grade" value="{{ settings.transport_from_grade }}"></div>
+          <div class="field"><label>উৎসব ভাতা (মূল বেতনের %)</label><input name="festival_pct" value="{{ settings.festival_pct }}"></div>
+          <div class="field"><label>বাংলা নববর্ষ ভাতা (মূল বেতনের %)</label><input name="boishakhi_pct" value="{{ settings.boishakhi_pct }}"></div>
+          <div class="field"><label>রাজস্ব স্ট্যাম্প কর্তন (টাকা)</label><input name="revenue_stamp" value="{{ settings.revenue_stamp }}"></div>
+          <div class="field"><label>বার্ষিক ইনক্রিমেন্ট (%)</label><input name="increment_pct" value="{{ settings.increment_pct }}"></div>
+        </div>
+      </fieldset>
+      <button class="primary" type="submit">সংরক্ষণ করুন</button>
+    </div>
+  </div>
+</form>
+
+<div class="card" style="margin-top:18px">
+  <h2>বার্ষিক ইনক্রিমেন্ট</h2>
+  <p>সকল সক্রিয় কর্মচারীর মূল বেতন {{ settings.increment_pct|pct }}% বাড়ানো হবে (১০ টাকায় পূর্ণ করে, গ্রেডের সর্বোচ্চ সীমা পর্যন্ত)। সাধারণত প্রতি বছর ১ জুলাই একবার প্রয়োগ করুন।</p>
+  <form method="post" action="{{ url_for('annual_increment') }}" onsubmit="return confirm('সকল সক্রিয় কর্মচারীর মূল বেতনে ইনক্রিমেন্ট দেবেন? এটি একবারই করা উচিত।')">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button>ইনক্রিমেন্ট প্রয়োগ করুন</button>
+  </form>
+</div>
+{% endblock %}

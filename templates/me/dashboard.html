@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import bar_chart %}
+{% block title %}আমার বেতন{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>স্বাগতম, {{ emp.name_bn }}</h1><div class="muted">{{ emp.designation or '' }}{% if emp.department %} · {{ emp.department }}{% endif %} · আইডি {{ emp.code }}</div></div>
+  <a class="btn" href="{{ url_for('my_history_xlsx') }}">বেতন ইতিহাস (Excel)</a>
+</div>
+<div class="grid g3" style="margin-bottom:18px">
+  <div class="stat"><div class="label">সর্বশেষ নিট বেতন{% if latest %} ({{ month_label(latest.year, latest.month) }}){% endif %}</div><div class="value">৳ {{ (latest.net if latest else 0)|taka }}</div>
+    {% if latest %}<div class="sub"><a href="{{ url_for('payslip', slip_id=latest.id) }}">বিস্তারিত বিবরণী দেখুন →</a></div>{% endif %}</div>
+  <div class="stat"><div class="label">{{ year|bn }} সালে মোট প্রাপ্তি</div><div class="value">৳ {{ ytd|taka }}</div></div>
+  <div class="stat"><div class="label">বর্তমান মূল বেতন</div><div class="value">৳ {{ emp.basic|taka }}</div><div class="sub">{% if emp.grade %}গ্রেড-{{ emp.grade|bn }}{% endif %}</div></div>
+</div>
+<div class="card"><h2>মাসভিত্তিক নিট বেতন</h2>{{ bar_chart(chart, 'net', 'এখনো কোনো বেতনের রেকর্ড নেই।') }}</div>
+<h2>কোন মাসে কত বেতন পেয়েছেন</h2>
+{% set show_status = false %}
+{% include "_history.html" %}
+{% endblock %}

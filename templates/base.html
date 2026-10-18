@@ -1,0 +1,58 @@
+{% macro icon(name) -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == 'home' %}<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>
+{%- elif name == 'users' %}<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5c1.9.7 3.1 2.6 3.5 5.5"/>
+{%- elif name == 'sheet' %}<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/>
+{%- elif name == 'scale' %}<path d="M12 3v18M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/>
+{%- elif name == 'chart' %}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+{%- elif name == 'user' %}<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.2-6 8-6s7 2 8 6"/>
+{%- elif name == 'key' %}<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/>
+{%- endif %}</svg>
+{%- endmacro %}
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}বেতন ব্যবস্থাপনা{% endblock %} — {{ settings.office_name }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if user %}
+<div class="shell">
+  <aside class="side">
+    <div class="logo">
+      <div class="mark">না</div>
+      <div><b>{{ settings.office_name }}</b><span>বেতন ব্যবস্থাপনা</span></div>
+    </div>
+    {% set ep = request.endpoint or '' %}
+    <nav>
+      {% if user.role == 'admin' %}
+        <a href="{{ url_for('admin_dashboard') }}" class="{{ 'active' if ep == 'admin_dashboard' }}">{{ icon('home') }}ড্যাশবোর্ড</a>
+        <a href="{{ url_for('employees') }}" class="{{ 'active' if ep.startswith('employee') }}">{{ icon('users') }}কর্মচারী</a>
+        <a href="{{ url_for('payroll_list') }}" class="{{ 'active' if ep.startswith('payroll') or ep.startswith('payslip') }}">{{ icon('sheet') }}মাসিক বেতন শিট</a>
+        <a href="{{ url_for('reports') }}" class="{{ 'active' if ep.startswith('reports') }}">{{ icon('chart') }}মাসভিত্তিক হিসাব</a>
+        <a href="{{ url_for('payscale') }}" class="{{ 'active' if ep == 'payscale' }}">{{ icon('scale') }}বেতন স্কেল ও ভাতা</a>
+      {% else %}
+        <a href="{{ url_for('my_dashboard') }}" class="{{ 'active' if ep == 'my_dashboard' }}">{{ icon('home') }}আমার বেতন</a>
+        <a href="{{ url_for('my_profile') }}" class="{{ 'active' if ep == 'my_profile' }}">{{ icon('user') }}আমার প্রোফাইল</a>
+      {% endif %}
+      <a href="{{ url_for('change_password') }}" class="{{ 'active' if ep == 'change_password' }}">{{ icon('key') }}পাসওয়ার্ড</a>
+    </nav>
+    <div class="who">
+      <div>{{ 'অ্যাডমিন' if user.role == 'admin' else 'কর্মচারী' }}: <b>{{ user.username }}</b></div>
+      <form method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sm" type="submit">লগআউট</button></form>
+    </div>
+  </aside>
+  <main class="main">
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+  {% block bare %}{% endblock %}
+{% endif %}
+</body>
+</html>

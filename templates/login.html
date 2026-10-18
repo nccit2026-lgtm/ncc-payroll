@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}লগইন{% endblock %}
+{% block bare %}
+<div class="login-wrap">
+  <form class="login-card" method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="mark">না</div>
+    <h1 style="text-align:center;margin-bottom:2px">{{ settings.office_name }}</h1>
+    <p class="muted" style="text-align:center;margin-top:0">বেতন ব্যবস্থাপনা সিস্টেম</p>
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}<div class="flash {{ cat }}">{{ msg }}</div>{% endfor %}
+    <div class="field"><label for="u">কর্মচারী আইডি</label><input id="u" name="username" required autofocus autocomplete="username"></div>
+    <div class="field"><label for="p">পাসওয়ার্ড</label><input id="p" name="password" type="password" required autocomplete="current-password"></div>
+    <button class="primary" style="width:100%;justify-content:center" type="submit">প্রবেশ করুন</button>
+    <p class="hint" style="text-align:center;margin-top:14px">পাসওয়ার্ড ভুলে গেলে হিসাব শাখায় যোগাযোগ করুন।</p>
+  </form>
+</div>
+{% endblock %}

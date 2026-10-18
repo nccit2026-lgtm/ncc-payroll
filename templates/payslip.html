@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}বেতন বিবরণী {{ month_label(slip.year, slip.month) }}{% endblock %}
+{% block content %}
+{% set oa = loads(slip.other_allowance) %}{% set od = loads(slip.other_deduction) %}
+<div class="topbar no-print">
+  <a class="btn" href="javascript:history.back()">← ফিরুন</a>
+  <button class="primary" onclick="window.print()">প্রিন্ট / PDF</button>
+</div>
+<div class="slip">
+  <header>
+    <h1>{{ settings.office_name }}</h1>
+    <div class="muted">{{ settings.office_address }}</div>
+    <h2 style="margin:8px 0 0">বেতন বিবরণী — {{ month_label(slip.year, slip.month) }}</h2>
+    {% if slip.status != 'final' %}<span class="badge draft">খসড়া</span>{% endif %}
+  </header>
+  <div class="grid g2" style="gap:6px 24px;margin-bottom:16px">
+    <div>নাম: <b>{{ slip.name_bn }}</b></div><div>আইডি: <b>{{ slip.code }}</b></div>
+    <div>পদবি: {{ slip.designation or '—' }}</div><div>শাখা: {{ slip.department or '—' }}</div>
+    <div>গ্রেড: {{ slip.grade|bn if slip.grade else '—' }}</div><div>হিসাব নং: {{ slip.account_no|bn if slip.account_no else '—' }}</div>
+  </div>
+  <div class="grid g2">
+    <table class="kv">
+      <thead><tr><th colspan="2" style="color:var(--brand);font-weight:700">প্রাপ্য বেতন ও ভাতা</th></tr></thead>
+      {% for f in ['basic','house_rent','medical','education','tiffin','transport','festival','boishakhi'] %}{% if slip[f] or f == 'basic' %}
+        <tr><th>{{ FIELD_LABELS[f] }}</th><td class="num">{{ slip[f]|taka }}</td></tr>{% endif %}{% endfor %}
+      {% for i in oa %}<tr><th>{{ i.name }}</th><td class="num">{{ i.amount|taka }}</td></tr>{% endfor %}
+      <tr><th><b>মোট</b></th><td class="num"><b>{{ slip.gross|taka }}</b></td></tr>
+    </table>
+    <table class="kv">
+      <thead><tr><th colspan="2" style="color:var(--brand);font-weight:700">কর্তন</th></tr></thead>
+      {% for f in ['gpf','revenue_stamp'] %}{% if slip[f] %}<tr><th>{{ FIELD_LABELS[f] }}</th><td class="num">{{ slip[f]|taka }}</td></tr>{% endif %}{% endfor %}
+      {% for i in od %}<tr><th>{{ i.name }}</th><td class="num">{{ i.amount|taka }}</td></tr>{% endfor %}
+      <tr><th><b>মোট কর্তন</b></th><td class="num"><b>{{ slip.total_deduction|taka }}</b></td></tr>
+    </table>
+  </div>
+  <div class="net"><span>নিট প্রদেয়</span><span>৳ {{ slip.net|taka }}</span></div>
+  <div class="sign"><div>প্রস্তুতকারী</div><div>হিসাবরক্ষণ কর্মকর্তা</div></div>
+</div>
+{% endblock %}

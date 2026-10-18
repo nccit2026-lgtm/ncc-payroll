@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import bar_chart, status_badge %}
+{% block title %}ড্যাশবোর্ড{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>ড্যাশবোর্ড</h1><div class="muted">আজ {{ today.day|bn }} {{ MONTHS_BN[today.month] }} {{ today.year|bn }}</div></div>
+  <div class="actions">
+    {% if this_run %}
+      <a class="btn primary" href="{{ url_for('payroll_view', run_id=this_run.id) }}">{{ MONTHS_BN[today.month] }} মাসের শিট দেখুন</a>
+    {% else %}
+      <a class="btn primary" href="{{ url_for('payroll_list') }}">{{ MONTHS_BN[today.month] }} মাসের বেতন শিট তৈরি করুন</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('employee_new') }}">+ নতুন কর্মচারী</a>
+  </div>
+</div>
+
+<div class="grid g4" style="margin-bottom:18px">
+  <div class="stat"><div class="label">সক্রিয় কর্মচারী</div><div class="value">{{ (stats.active or 0)|bn }} জন</div><div class="sub">মোট নিবন্ধিত {{ stats.total|bn }} জন</div></div>
+  <div class="stat"><div class="label">মোট মাসিক মূল বেতন</div><div class="value">৳ {{ stats.basic_sum|taka }}</div><div class="sub">সক্রিয় কর্মচারীদের বর্তমান মূল বেতন</div></div>
+  <div class="stat">
+    <div class="label">সর্বশেষ নিট প্রদান{% if last %} ({{ month_label(last.year, last.month) }}){% endif %}</div>
+    <div class="value">৳ {{ (last.net if last else 0)|taka }}</div>
+    {% if last and prev %}{% set d = last.net - prev.net %}
+      <div class="sub {{ 'up' if d >= 0 else 'down' }}">আগের মাসের চেয়ে {{ '+' if d >= 0 }}{{ d|taka }} টাকা</div>
+    {% else %}<div class="sub">—</div>{% endif %}
+  </div>
+  <div class="stat"><div class="label">এ মাসের শিট</div>
+    <div class="value" style="font-size:1.2rem;margin-top:8px">{% if this_run %}{{ status_badge(this_run.status) }}{% else %}<span class="badge off">তৈরি হয়নি</span>{% endif %}</div>
+    <div class="sub">{{ month_label(today.year, today.month) }}</div></div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>গত ১২ মাসের নিট বেতন প্রদান</h2>
+    {{ bar_chart(runs, 'net', 'এখনো কোনো বেতন শিট তৈরি হয়নি।') }}
+  </div>
+  <div class="card">
+    <h2>শাখাভিত্তিক কর্মচারী</h2>
+    {% if depts %}
+    <table><thead><tr><th>শাখা</th><th class="num">কর্মচারী</th></tr></thead><tbody>
+      {% for d in depts %}<tr><td><a href="{{ url_for('employees', dept=d.department) }}">{{ d.department }}</a></td><td class="num">{{ d.n|bn }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted">কোনো কর্মচারী নেই। <a href="{{ url_for('employees_import') }}">Excel থেকে ইমপোর্ট করুন</a></p>{% endif %}
+  </div>
+</div>
+{% endblock %}

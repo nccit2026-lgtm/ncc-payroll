@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import bar_chart, status_badge %}
+{% block title %}মাসভিত্তিক হিসাব{% endblock %}
+{% block content %}
+<div class="topbar"><h1>মাসভিত্তিক বেতন প্রদানের হিসাব</h1><a class="btn primary" href="{{ url_for('reports_excel') }}">Excel ডাউনলোড</a></div>
+<div class="card"><h2>গত ১২ মাস — নিট প্রদান</h2>{{ bar_chart(chart, 'net', 'এখনো কোনো বেতন শিট নেই।') }}</div>
+
+{% if years %}
+<h2>বছরভিত্তিক মোট</h2>
+<div class="grid g3" style="margin-bottom:18px">
+  {% for y, t in years|dictsort(reverse=true) %}
+  <div class="stat"><div class="label">{{ y|bn }} সাল ({{ t.months|bn }} মাস)</div><div class="value">৳ {{ t.net|taka }}</div><div class="sub">মোট বেতন {{ t.gross|taka }} · কর্তন {{ t.deduction|taka }}</div></div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>মাস</th><th>অবস্থা</th><th class="num">কর্মচারী</th><th class="num">মোট বেতন</th><th class="num">মোট কর্তন</th><th class="num">নিট প্রদান</th><th class="num">আগের মাসের তুলনায়</th></tr></thead>
+  <tbody>
+  {% for row in rows %}{% set r = row.run %}
+    <tr><td><a href="{{ url_for('payroll_view', run_id=r.id) }}">{{ month_label(r.year, r.month) }}</a></td><td>{{ status_badge(r.status) }}</td>
+      <td class="num">{{ r.headcount|bn }}{% if row.hdiff %} <span class="small {{ 'up' if row.hdiff > 0 else 'down' }}">({{ '+' if row.hdiff > 0 }}{{ row.hdiff|bn }})</span>{% endif %}</td>
+      <td class="num">{{ r.gross|taka }}</td><td class="num">{{ r.deduction|taka }}</td><td class="num"><b>{{ r.net|taka }}</b></td>
+      <td class="num">{% if row.diff is none %}—{% else %}<span class="{{ 'up' if row.diff >= 0 else 'down' }}">{{ '+' if row.diff >= 0 }}{{ row.diff|taka }}</span>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">কোনো তথ্য নেই।</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

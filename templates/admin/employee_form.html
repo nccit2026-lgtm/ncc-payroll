@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}{{ 'তথ্য সম্পাদনা' if emp and emp.id else 'নতুন কর্মচারী' }}{% endblock %}
+{% macro f(name, label, type='text', hint='', list=None, req=False) %}
+  <div class="field"><label for="{{ name }}">{{ label }}{% if req %} *{% endif %}</label>
+    <input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ emp[name] if emp and emp[name] is not none else '' }}" {{ 'required' if req }} {% if list %}list="{{ list }}"{% endif %}>
+    {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}</div>
+{% endmacro %}
+{% block content %}
+<div class="topbar">
+  <h1>{{ ('তথ্য সম্পাদনা: ' ~ emp.name_bn) if emp and emp.id else 'নতুন কর্মচারী যুক্ত করুন' }}</h1>
+  {% if emp and emp.id %}<a class="btn" href="{{ url_for('employee_view', emp_id=emp.id) }}">← প্রোফাইলে ফিরুন</a>{% endif %}
+</div>
+<form method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <datalist id="depts">{% for d in depts %}<option value="{{ d }}">{% endfor %}</datalist>
+  <datalist id="desigs">{% for d in desigs %}<option value="{{ d }}">{% endfor %}</datalist>
+
+  <fieldset><legend>ব্যক্তিগত তথ্য</legend>
+    <div class="grid g3">
+      {{ f('code', 'কর্মচারী আইডি', hint='এটিই লগইন আইডি হবে', req=True) }}
+      {{ f('name_bn', 'নাম (বাংলায়)', req=True) }}
+      {{ f('name_en', 'নাম (ইংরেজিতে)') }}
+      {{ f('father_name', 'পিতার নাম') }}
+      {{ f('mother_name', 'মাতার নাম') }}
+      <div class="field"><label>লিঙ্গ</label><select name="gender">{% for g in ['', 'পুরুষ', 'মহিলা', 'অন্যান্য'] %}<option {{ 'selected' if emp and emp.gender == g }}>{{ g }}</option>{% endfor %}</select></div>
+      {{ f('dob', 'জন্ম তারিখ', 'date', 'চিকিৎসা ভাতা (৫০ বছর) হিসাবে লাগবে') }}
+      {{ f('nid', 'জাতীয় পরিচয়পত্র নং') }}
+      {{ f('mobile', 'মোবাইল') }}
+      {{ f('email', 'ইমেইল', 'email') }}
+    </div>
+    <div class="field"><label>ঠিকানা</label><textarea name="address" rows="2">{{ emp.address if emp and emp.address }}</textarea></div>
+  </fieldset>
+
+  <fieldset><legend>চাকরির তথ্য</legend>
+    <div class="grid g3">
+      {{ f('designation', 'পদবি', list='desigs') }}
+      {{ f('department', 'শাখা / বিভাগ', list='depts') }}
+      <div class="field"><label>চাকরির ধরন</label><select name="employment_type">{% for t in ['স্থায়ী', 'অস্থায়ী', 'চুক্তিভিত্তিক', 'মাস্টাররোল'] %}<option {{ 'selected' if emp and emp.employment_type == t }}>{{ t }}</option>{% endfor %}</select></div>
+      {{ f('join_date', 'যোগদানের তারিখ', 'date') }}
+      {{ f('prl_date', 'পিআরএল শুরুর তারিখ', 'date') }}
+      <div class="field"><label>অবস্থা</label><select name="status"><option value="active" {{ 'selected' if not emp or emp.status == 'active' }}>সক্রিয়</option><option value="inactive" {{ 'selected' if emp and emp.status == 'inactive' }}>নিষ্ক্রিয় (অবসর/বদলি/অব্যাহতি)</option></select><div class="hint">নিষ্ক্রিয় কর্মচারী বেতন শিটে আসবে না, তবে পুরনো রেকর্ড থাকবে</div></div>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>বেতন নির্ধারণ</legend>
+    <div class="grid g3">
+      <div class="field"><label>গ্রেড</label>
+        <select name="grade" id="grade"><option value="">—</option>
+          {% for g, pg in grades.items() %}<option value="{{ g }}" data-start="{{ pg.start_basic }}" data-max="{{ pg.max_basic }}" {{ 'selected' if emp and emp.grade == g }}>গ্রেড-{{ g|bn }} ({{ pg.start_basic|taka }}–{{ pg.max_basic|taka }})</option>{% endfor %}
+        </select></div>
+      <div class="field"><label>মূল বেতন (টাকা)</label><input name="basic" id="basic" inputmode="numeric" value="{{ emp.basic if emp else '' }}"><div class="hint" id="basic-hint">গ্রেড নির্বাচন করলে প্রারম্ভিক বেতন বসে যাবে</div></div>
+      <div class="field"><label>জিপিএফ চাঁদা (মূল বেতনের %)</label><input name="gpf_pct" inputmode="decimal" value="{{ emp.gpf_pct if emp and emp.gpf_pct is not none else 5 }}"><div class="hint">চুক্তিভিত্তিক হলে ০ দিন</div></div>
+      <div class="field"><label>সন্তান সংখ্যা</label><input name="children" inputmode="numeric" value="{{ emp.children if emp else 0 }}"><div class="hint">শিক্ষা সহায়ক ভাতার জন্য</div></div>
+      <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="govt_quarter" value="1" {{ 'checked' if emp and emp.govt_quarter }}> সরকারি বাসায় থাকেন (বাড়ি ভাড়া ভাতা পাবেন না)</label></div>
+    </div>
+    <h3 style="margin-top:6px">ভাতা নিজে নির্ধারণ (ঐচ্ছিক)</h3>
+    <p class="hint" style="margin-top:-6px">খালি রাখলে "বেতন স্কেল ও ভাতা" পাতার নিয়ম অনুযায়ী স্বয়ংক্রিয় হিসাব হবে। টাকা লিখলে প্রতি মাসে সেই নির্দিষ্ট অঙ্কই বসবে।</p>
+    <div class="grid g4">
+      {{ f('ovr_house_rent', 'বাড়ি ভাড়া ভাতা') }}
+      {{ f('ovr_medical', 'চিকিৎসা ভাতা') }}
+      {{ f('ovr_education', 'শিক্ষা সহায়ক ভাতা') }}
+      {{ f('ovr_tiffin', 'টিফিন ভাতা') }}
+      {{ f('ovr_transport', 'যাতায়াত ভাতা') }}
+    </div>
+  </fieldset>
+
+  <fieldset><legend>ব্যাংক ও অন্যান্য</legend>
+    <div class="grid g3">
+      {{ f('bank_name', 'ব্যাংকের নাম') }}
+      {{ f('bank_branch', 'ব্যাংক শাখা') }}
+      {{ f('account_no', 'হিসাব নম্বর') }}
+      {{ f('gpf_no', 'জিপিএফ হিসাব নং') }}
+      {{ f('tin', 'টিআইএন') }}
+    </div>
+  </fieldset>
+  <button class="primary" type="submit">সংরক্ষণ করুন</button>
+</form>
+<script>
+  // গ্রেড বদলালে মূল বেতন খালি বা পরিসরের বাইরে থাকলে প্রারম্ভিক বেতন বসানো
+  (function () {
+    var g = document.getElementById('grade'), b = document.getElementById('basic'), h = document.getElementById('basic-hint');
+    function info() {
+      var o = g.options[g.selectedIndex]; if (!o || !o.dataset.start) return;
+      h.textContent = 'পরিসর: ' + Number(o.dataset.start).toLocaleString('bn-BD') + ' – ' + Number(o.dataset.max).toLocaleString('bn-BD') + ' টাকা';
+    }
+    g.addEventListener('change', function () {
+      var o = g.options[g.selectedIndex], v = Number((b.value || '').replace(/,/g, ''));
+      if (o.dataset.start && (!v || v < +o.dataset.start || v > +o.dataset.max)) b.value = o.dataset.start;
+      info();
+    });
+    info();
+  })();
+</script>
+{% endblock %}

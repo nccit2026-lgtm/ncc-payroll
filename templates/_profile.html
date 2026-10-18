@@ -1,0 +1,32 @@
+{# কর্মচারীর প্রোফাইল তথ্য — অ্যাডমিন ও কর্মচারী দুই পাতাতেই ব্যবহৃত #}
+<div class="grid g2">
+  <div class="card">
+    <h2>ব্যক্তিগত তথ্য</h2>
+    <table class="kv">
+      <tr><th>নাম</th><td>{{ emp.name_bn }}{% if emp.name_en %} / {{ emp.name_en }}{% endif %}</td></tr>
+      <tr><th>পিতার নাম</th><td>{{ emp.father_name or '—' }}</td></tr>
+      <tr><th>মাতার নাম</th><td>{{ emp.mother_name or '—' }}</td></tr>
+      <tr><th>লিঙ্গ</th><td>{{ emp.gender or '—' }}</td></tr>
+      <tr><th>জন্ম তারিখ</th><td>{{ emp.dob|bndate if emp.dob else '—' }}{% if age is not none %} (বয়স {{ age|bn }} বছর){% endif %}</td></tr>
+      <tr><th>জাতীয় পরিচয়পত্র</th><td>{{ emp.nid|bn if emp.nid else '—' }}</td></tr>
+      <tr><th>মোবাইল</th><td>{{ emp.mobile|bn if emp.mobile else '—' }}</td></tr>
+      <tr><th>ইমেইল</th><td>{{ emp.email or '—' }}</td></tr>
+      <tr><th>ঠিকানা</th><td>{{ emp.address or '—' }}</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h2>চাকরি ও ব্যাংক তথ্য</h2>
+    <table class="kv">
+      <tr><th>কর্মচারী আইডি</th><td>{{ emp.code }}</td></tr>
+      <tr><th>পদবি</th><td>{{ emp.designation or '—' }}</td></tr>
+      <tr><th>শাখা</th><td>{{ emp.department or '—' }}</td></tr>
+      <tr><th>চাকরির ধরন</th><td>{{ emp.employment_type or '—' }}</td></tr>
+      <tr><th>গ্রেড / মূল বেতন</th><td>{% if emp.grade %}গ্রেড-{{ emp.grade|bn }}, {% endif %}{{ emp.basic|taka }} টাকা</td></tr>
+      <tr><th>যোগদান</th><td>{{ emp.join_date|bndate if emp.join_date else '—' }}</td></tr>
+      <tr><th>পিআরএল</th><td>{{ emp.prl_date|bndate if emp.prl_date else '—' }}</td></tr>
+      <tr><th>ব্যাংক</th><td>{{ emp.bank_name or '—' }}{% if emp.bank_branch %}, {{ emp.bank_branch }}{% endif %}</td></tr>
+      <tr><th>হিসাব নম্বর</th><td>{{ emp.account_no|bn if emp.account_no else '—' }}</td></tr>
+      <tr><th>জিপিএফ নং / টিআইএন</th><td>{{ emp.gpf_no or '—' }} / {{ emp.tin or '—' }}</td></tr>
+    </table>
+  </div>
+</div>

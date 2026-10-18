@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Excel থেকে ইমপোর্ট{% endblock %}
+{% block content %}
+<div class="topbar"><h1>Excel থেকে কর্মচারী ইমপোর্ট</h1><a class="btn" href="{{ url_for('employees') }}">← তালিকায় ফিরুন</a></div>
+<div class="card" style="max-width:720px">
+  <ol>
+    <li><a href="{{ url_for('employees_template') }}"><b>টেমপ্লেট ডাউনলোড করুন</b></a> — প্রথম সারিতে কলামের শিরোনাম, দ্বিতীয় সারিতে একটি নমুনা আছে।</li>
+    <li>নমুনা সারি মুছে প্রতিটি কর্মচারীর জন্য একটি করে সারি পূরণ করুন। <b>আইডি</b> ও <b>নাম (বাংলা)</b> বাধ্যতামূলক।</li>
+    <li>তারিখ <code>YYYY-MM-DD</code> (যেমন 1980-05-12) অথবা Excel এর তারিখ ফরম্যাটে দিন।</li>
+    <li>একই আইডি আগে থাকলে সেই কর্মচারীর তথ্য হালনাগাদ হবে, নতুন আইডি হলে নতুন কর্মচারী যুক্ত হবে।</li>
+    <li>নতুন কর্মচারীর লগইন আইডি ও প্রাথমিক পাসওয়ার্ড = তার কর্মচারী আইডি।</li>
+  </ol>
+  <form method="post" enctype="multipart/form-data" class="inline-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field" style="flex:1"><label>Excel ফাইল (.xlsx)</label><input type="file" name="file" accept=".xlsx" required></div>
+    <button class="primary" type="submit">ইমপোর্ট করুন</button>
+  </form>
+</div>
+{% endblock %}
