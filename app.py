@@ -755,6 +755,12 @@ def register_routes(app):
         emp = get_db().execute("SELECT * FROM employees WHERE id = ?", (slip["employee_id"],)).fetchone()
         return render_template("payslip.html", slip=slip, emp=emp)
 
+    @app.errorhandler(400)
+    def bad_request(_e):
+        msg = ("অনুরোধটি যাচাই করা যায়নি। পাতাটি রিফ্রেশ করে আবার চেষ্টা করুন। বারবার হলে ঠিকানাটি "
+               "https:// দিয়ে খুলুন — নিরাপত্তার কারণে http:// এ লগইন কাজ করে না।")
+        return render_template("error.html", code=400, message=msg), 400
+
     @app.errorhandler(403)
     def forbidden(_e):
         return render_template("error.html", code=403, message="এই পাতাটি দেখার অনুমতি আপনার নেই।"), 403
