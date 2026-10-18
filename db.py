@@ -23,14 +23,15 @@ MIGRATIONS = {
         "new_basic_override": "REAL", "pf": "INTEGER NOT NULL DEFAULT 0",
         "special_rate": "TEXT NOT NULL DEFAULT 'auto'", "tiffin": "INTEGER NOT NULL DEFAULT 1",
         "transport": "INTEGER NOT NULL DEFAULT 1", "wash": "INTEGER NOT NULL DEFAULT 0",
-        "separation_reason": "TEXT", "separation_date": "TEXT",
+        "separation_reason": "TEXT", "separation_date": "TEXT", "religion": "TEXT",
     },
     "payslips": {
         "mobile": "REAL NOT NULL DEFAULT 0", "wash": "REAL NOT NULL DEFAULT 0", "special": "REAL NOT NULL DEFAULT 0",
         "pf_office": "REAL NOT NULL DEFAULT 0", "pf_fund": "REAL NOT NULL DEFAULT 0", "pf_own": "REAL NOT NULL DEFAULT 0",
-        "phase": "TEXT",
+        "phase": "TEXT", "ref_basic": "REAL",
     },
-    "payroll_runs": {"include_arrears": "INTEGER NOT NULL DEFAULT 0"},
+    "payroll_runs": {"include_arrears": "INTEGER NOT NULL DEFAULT 0", "kind": "TEXT NOT NULL DEFAULT 'salary'",
+                     "title": "TEXT", "religion": "TEXT", "multiplier": "REAL", "pct": "REAL", "amount": "REAL"},
     "users": {"must_change": "INTEGER NOT NULL DEFAULT 0"},
 }
 
@@ -63,6 +64,7 @@ def init_db():
         for col, ddl in cols.items():
             if col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    _drop_month_unique(conn)
 
     for key, value in DEFAULT_SETTINGS.items():
         conn.execute(
@@ -76,6 +78,29 @@ def init_db():
             ("admin", generate_password_hash(os.environ.get("ADMIN_PASSWORD", "admin123"))),
         )
     conn.commit()
+
+
+def _drop_month_unique(conn):
+    """পুরনো সংস্করণে এক মাসে একটিই শিট রাখা যেত (UNIQUE year, month)। এখন একই মাসে বেতন ছাড়াও
+    বোনাস/বকেয়া/ভাতার আলাদা শিট লাগে, তাই টেবিলটি নতুন করে তৈরি করে সব তথ্য কপি করা হয়।"""
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'payroll_runs'").fetchone()[0]
+    if "UNIQUE" not in sql.upper():
+        return
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(payroll_runs)")]
+    with open(os.path.join(BASE_DIR, "schema.sql"), encoding="utf-8") as f:
+        schema = f.read()
+    a = schema.index("CREATE TABLE IF NOT EXISTS payroll_runs (")
+    create = schema[a:schema.index(");", a) + 2].replace("IF NOT EXISTS payroll_runs", "payroll_runs_new")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript(f"""BEGIN;
+        {create}
+        INSERT INTO payroll_runs_new ({', '.join(cols)}) SELECT {', '.join(cols)} FROM payroll_runs;
+        DROP TABLE payroll_runs;
+        ALTER TABLE payroll_runs_new RENAME TO payroll_runs;
+        CREATE INDEX IF NOT EXISTS idx_runs_month ON payroll_runs(year, month);
+        COMMIT;""")
+    conn.execute("PRAGMA foreign_keys = ON")
 
 
 def get_settings():

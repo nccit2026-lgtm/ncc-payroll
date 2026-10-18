@@ -71,8 +71,8 @@ def test_full_flow():
         e2 = get_db().execute("SELECT * FROM employees WHERE code = 'E2'").fetchone()
         assert (e2["inc_2026"], e2["inc_2027"], e2["tiffin"], e2["pf"]) == (0, 1, 1, 0)
 
-    # অক্টোবর ২০২৬ শিট: উৎসব ভাতা + বকেয়া
-    r = post(c, "/admin/payroll/new", {"year": "2026", "month": "10", "festival": "1", "arrears": "1"},
+    # অক্টোবর ২০২৬ বেতন শিট, বকেয়াসহ (উৎসব ভাতা এখন আলাদা শিটে)
+    r = post(c, "/admin/payroll/new", {"year": "2026", "month": "10", "kind": "salary", "arrears": "1"},
              follow_redirects=True)
     html = r.get_data(as_text=True)
     assert "বেতন শিট — অক্টোবর ২০২৬" in html
@@ -85,9 +85,9 @@ def test_full_flow():
         s = get_db().execute("SELECT * FROM payslips WHERE employee_id = ?", (emp_id,)).fetchone()
         a = payscale.arrears(emp)
         assert (s["basic"], s["house_rent"], s["medical"], s["education"], s["tiffin"], s["transport"],
-                s["festival"], s["pf_office"], s["special"]) == (28505, 8914.5, 1500, 1000, 200, 300, 28505, 2850.5, 0)
+                s["festival"], s["pf_office"], s["special"]) == (28505, 8914.5, 1500, 1000, 200, 300, 0, 2850.5, 0)
         assert s["phase"] == "১ম কিস্তি"
-        gross = 28505 + 8914.5 + 1500 + 1000 + 200 + 300 + 28505 + 2850.5 + a["total"] + a["pf_total"]
+        gross = 28505 + 8914.5 + 1500 + 1000 + 200 + 300 + 2850.5 + a["total"] + a["pf_total"]
         ded = 2850.5 * 2 + 1000 + 2 * a["pf_total"]
         assert round(s["gross"], 2) == round(gross, 2) and round(s["net"], 2) == round(gross - ded, 2)
 
@@ -175,6 +175,8 @@ def test_old_database_is_upgraded():
     conn.executescript(old_schema.stdout)
     conn.executemany("INSERT INTO pay_grades VALUES (?, 1, 1)", [(g,) for g in range(1, 21)])  # পুরনো সংস্করণ এগুলো রাখত
     conn.execute("INSERT INTO employees (code, name_bn, grade, basic) VALUES ('OLD1', 'পুরনো', 16, 10260)")
+    conn.execute("INSERT INTO payroll_runs (year, month, status) VALUES (2026, 7, 'final')")
+    conn.execute("INSERT INTO payslips (run_id, employee_id, basic, net) VALUES (1, 1, 10260, 15000)")
     conn.commit()
     conn.close()
     app = create_app(db)
@@ -184,6 +186,14 @@ def test_old_database_is_upgraded():
         assert {"inc_2026", "pf", "special_rate", "wash"} <= cols
         e = get_db().execute("SELECT * FROM employees WHERE code = 'OLD1'").fetchone()
         assert e["inc_2026"] == 1 and e["tiffin"] == 1
+        # এক মাসে একটিই শিটের বাধা উঠে গেছে, পুরনো শিট ও বিবরণী অক্ষত
+        sql = get_db().execute("SELECT sql FROM sqlite_master WHERE name = 'payroll_runs'").fetchone()[0]
+        assert "UNIQUE" not in sql.upper()
+        run = get_db().execute("SELECT * FROM payroll_runs WHERE id = 1").fetchone()
+        assert (run["year"], run["month"], run["status"], run["kind"]) == (2026, 7, "final", "salary")
+        assert get_db().execute("SELECT net FROM payslips WHERE run_id = 1").fetchone()[0] == 15000
+        get_db().execute("INSERT INTO payroll_runs (year, month, kind) VALUES (2026, 7, 'festival')")
+        assert get_db().execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_ids_separation_sheet_statement():
@@ -258,8 +268,89 @@ def test_ids_separation_sheet_statement():
     assert me.get("/statement/3").status_code == 403
 
 
+def test_bonus_religion_filters_font():
+    import app as app_module
+    app_module.FAILED_LOGINS.clear()
+    app = create_app(os.path.join(tempfile.mkdtemp(), "b.db"))
+    c = app.test_client()
+    from db import get_db
+    post(c, "/login", {"username": "admin", "password": "admin123"})
+    post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"})
+    base = {"code": "", "inc_2026": "1", "inc_2027": "1", "tiffin": "1", "transport": "1"}
+    people = [("রহিম", "মুসলিম", "13", "19810", "সাধারণ শাখা"), ("প্রদীপ", "হিন্দু", "13", "19810", "হিসাব বিভাগ"),
+              ("সুমন", "Buddhist", "16", "10260", "সাধারণ শাখা"), ("জন", "খ্রিষ্টান", "10", "16000", "হিসাব বিভাগ"),
+              ("অজানা", "", "16", "10260", "সাধারণ শাখা")]
+    for name, rel, g, b, d in people:
+        post(c, "/admin/employees/new", {**base, "name_bn": name, "religion": rel, "grade": g, "basic": b, "department": d})
+    with app.app_context():
+        rels = [r[0] for r in get_db().execute("SELECT religion FROM employees ORDER BY id")]
+    assert rels == ["ইসলাম", "হিন্দু", "বৌদ্ধ", "খ্রিস্টান", None]  # বানানভেদ ঠিক করে নেওয়া
+
+    # ঈদ (ইসলাম): শুধু মুসলিম, এক মূল বেতন (মার্চ ২০২৭ = ২য় কিস্তির মূল বেতন)
+    r = post(c, "/admin/payroll/new", {"kind": "festival", "year": "2027", "month": "3", "religion": "ইসলাম",
+                                       "multiplier": "1", "title": "ঈদুল ফিতর উৎসব ভাতা"}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "১ জনের খসড়া শিট" in html and "অজানা (ধর্ম দেওয়া নেই)" in html
+    with app.app_context():
+        run = get_db().execute("SELECT * FROM payroll_runs WHERE kind = 'festival'").fetchone()
+        s = get_db().execute("SELECT * FROM payslips WHERE run_id = ?", (run["id"],)).fetchall()
+        assert len(s) == 1 and s[0]["name_bn"] == "রহিম"
+        assert (s[0]["festival"], s[0]["basic"], s[0]["house_rent"], s[0]["net"], s[0]["ref_basic"]) == \
+            (32002.5, 0, 0, 32002.5, 32002.5)
+    # দুর্গাপূজা (হিন্দু): দুই মূল বেতন; একই মাসে বেতন শিটও আলাদাভাবে তৈরি করা যায়
+    post(c, "/admin/payroll/new", {"kind": "festival", "year": "2026", "month": "10", "religion": "হিন্দু", "multiplier": "2"})
+    post(c, "/admin/payroll/new", {"kind": "salary", "year": "2026", "month": "10"})
+    with app.app_context():
+        puja = get_db().execute("SELECT p.* FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                                "WHERE r.religion = 'হিন্দু'").fetchall()
+        assert [(x["name_bn"], x["festival"]) for x in puja] == [("প্রদীপ", 57010)]
+        assert get_db().execute("SELECT COUNT(*) FROM payroll_runs WHERE year = 2026 AND month = 10").fetchone()[0] == 2
+
+    # বকেয়া আলাদা শিটে; দ্বিতীয়বার দেওয়া যাবে না
+    post(c, "/admin/payroll/new", {"kind": "arrears", "year": "2026", "month": "11"})
+    r = post(c, "/admin/payroll/new", {"kind": "salary", "year": "2026", "month": "11", "arrears": "1"}, follow_redirects=True)
+    assert "আগেই" in r.get_data(as_text=True)
+    with app.app_context():
+        arr = get_db().execute("SELECT p.* FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.kind = 'arrears'").fetchall()
+        assert len(arr) == 5 and all(x["basic"] == 0 and x["net"] > 0 for x in arr)
+        assert not get_db().execute("SELECT 1 FROM payroll_runs WHERE kind = 'salary' AND month = 11").fetchone()
+
+    # অন্যান্য ভাতা: জনপ্রতি নির্দিষ্ট টাকা, ও নববর্ষ ভাতা
+    post(c, "/admin/payroll/new", {"kind": "other", "year": "2027", "month": "4", "title": "ঝুঁকি ভাতা", "amount": "1500"})
+    post(c, "/admin/payroll/new", {"kind": "boishakhi", "year": "2027", "month": "4"})
+    with app.app_context():
+        risk = get_db().execute("SELECT p.net FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.title = 'ঝুঁকি ভাতা'").fetchall()
+        assert [x[0] for x in risk] == [1500] * 5
+        bo = get_db().execute("SELECT p.boishakhi FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                              "WHERE r.kind = 'boishakhi' AND p.name_bn = 'রহিম'").fetchone()[0]
+        assert bo == round(32002.5 * 0.2, 2)
+        salary_run = get_db().execute("SELECT id FROM payroll_runs WHERE kind = 'salary'").fetchone()[0]
+
+    # শিট দেখা ও Excel এর আগে ফিল্টার: শাখা + গ্রেড, সাজানো, ভাগ ছাড়া
+    q = f"/admin/payroll/{salary_run}?dept=সাধারণ শাখা&grade=16&sort=net&group=0"
+    html = c.get(q).get_data(as_text=True)
+    assert "সুমন" in html and "অজানা" in html and "রহিম" not in html and "প্রদীপ" not in html
+    assert "উপমোট" not in html and "ফিল্টার: শাখা: সাধারণ শাখা; গ্রেড: ১৬" in html
+    ws = load_workbook(io.BytesIO(c.get(q.replace(f"/{salary_run}?", f"/{salary_run}/excel?")).data)).active
+    names = [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)]
+    assert "সুমন" in names and "অজানা" in names and "রহিম" not in names and "উপমোট" not in names
+    assert "সাধারণ শাখা" in ws.cell(3, 1).value
+    ws = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{salary_run}/excel?sort=grade").data)).active
+    assert [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)].count("উপমোট") == 2
+
+    # একসাথে ধর্ম সেট
+    post(c, "/admin/employees/religion", {"religion": "ইসলাম", "ids": ["5"]})
+    with app.app_context():
+        assert get_db().execute("SELECT religion FROM employees WHERE id = 5").fetchone()[0] == "ইসলাম"
+
+    # নিজস্ব ফন্ট
+    assert "fonts/fonts.css" in c.get("/admin").get_data(as_text=True)
+    assert c.get("/static/fonts/noto-sans-bengali-bengali-400-normal.woff2").status_code == 200
+
+
 if __name__ == "__main__":
     test_full_flow()
+    test_bonus_religion_filters_font()
     test_ids_separation_sheet_statement()
     test_old_database_is_upgraded()
     print("সব টেস্ট সফল")

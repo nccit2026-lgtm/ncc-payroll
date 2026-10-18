@@ -28,6 +28,18 @@ FIELD_LABELS = {
 
 ARREARS_LABEL = "বকেয়া: জুলাই–সেপ্টেম্বর ২০২৬"
 
+RELIGIONS = ["ইসলাম", "হিন্দু", "বৌদ্ধ", "খ্রিস্টান", "অন্যান্য"]
+# বেতন ছাড়া আলাদা শিটের ধরন
+RUN_KINDS = {
+    "salary": "মাসিক বেতন",
+    "festival": "উৎসব ভাতা",
+    "boishakhi": "বাংলা নববর্ষ ভাতা",
+    "arrears": "বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬)",
+    "other": "অন্যান্য ভাতা",
+}
+# উৎসব ভাতা: ঈদ (ইসলাম) মূল বেতনের ১ গুণ; হিন্দু/বৌদ্ধ/খ্রিস্টান ধর্মের উৎসবে ২ গুণ
+FESTIVAL_MULTIPLIER = {"ইসলাম": 1, "হিন্দু": 2, "বৌদ্ধ": 2, "খ্রিস্টান": 2}
+
 
 def age_on(dob, on):
     return age_on_date(dob, on)
@@ -67,6 +79,62 @@ def compute_components(emp, settings, year, month, include_festival=False, inclu
     return finalize_totals(slip)
 
 
+def _empty_slip():
+    return {**{f: 0 for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}, "other_allowance": [], "other_deduction": []}
+
+
+def compute_extra(emp, run, settings):
+    """বেতন ছাড়া শিট (উৎসব/নববর্ষ/বকেয়া/অন্যান্য ভাতা)। ফেরত: (slip, None) অথবা (None, বাদ পড়ার কারণ)।"""
+    kind = run["kind"]
+    if kind == "festival" and run["religion"]:
+        if not emp["religion"]:
+            return None, "ধর্ম দেওয়া নেই"
+        if emp["religion"] != run["religion"]:
+            return None, ""  # অন্য ধর্ম — এই উৎসব ভাতা প্রযোজ্য নয়
+    c, _plan = month_components(emp, run["year"], run["month"])
+    if c is None:
+        return None, "গ্রেড/মূল বেতন অসম্পূর্ণ"
+    base = c["basic"]
+    slip = _empty_slip()
+    slip["ref_basic"] = base
+    slip["phase"] = run["title"] or RUN_KINDS[kind]
+    if kind == "festival":
+        slip["festival"] = r2(base * float(run["multiplier"] or 1))
+    elif kind == "boishakhi":
+        slip["boishakhi"] = r2(base * float(settings["boishakhi_pct"]) / 100)
+    elif kind == "arrears":
+        a = arrears(emp)
+        if not a or not a["total"]:
+            return None, ""
+        if a["total"] > 0:
+            slip["other_allowance"].append({"name": ARREARS_LABEL, "amount": a["total"]})
+        else:
+            slip["other_deduction"].append({"name": ARREARS_LABEL + " (সমন্বয়)", "amount": -a["total"]})
+        if a["pf_total"]:
+            slip["other_allowance"].append({"name": "বকেয়ার উপর অফিস প্রদত্ত PF", "amount": a["pf_total"]})
+            slip["other_deduction"].append({"name": "বকেয়ার উপর PF (অফিস + নিজ অংশ)", "amount": r2(2 * a["pf_total"])})
+    elif kind == "other":
+        amt = r2(base * float(run["pct"]) / 100) if run["pct"] else r2(float(run["amount"] or 0))
+        slip["other_allowance"].append({"name": run["title"] or "ভাতা", "amount": amt})
+    return finalize_totals(slip), None
+
+
+def slip_for(emp, run, settings):
+    """যেকোনো ধরনের শিটের জন্য একজনের বিবরণী: (slip, None) অথবা (None, কারণ)।"""
+    if run["kind"] == "salary":
+        s = compute_components(emp, settings, run["year"], run["month"], run["include_festival"],
+                               run["include_boishakhi"], run["include_arrears"])
+        return (s, None) if s else (None, "গ্রেড/মূল বেতন অসম্পূর্ণ")
+    return compute_extra(emp, run, settings)
+
+
+def arrears_already_given(exclude_run_id=None):
+    """জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া আগে কোনো শিটে দেওয়া হয়েছে কিনা (দুবার দেওয়া ঠেকাতে)।"""
+    return get_db().execute(
+        "SELECT * FROM payroll_runs WHERE (kind = 'arrears' OR include_arrears = 1) AND id != ?",
+        (exclude_run_id or 0,)).fetchone()
+
+
 def _items(value):
     return json.loads(value) if isinstance(value, str) else (value or [])
 
@@ -80,28 +148,30 @@ def finalize_totals(slip):
     return slip
 
 
-def generate_run(year, month, include_festival, include_boishakhi, note="", include_arrears=False):
-    """নির্দিষ্ট মাসের জন্য সকল সক্রিয় কর্মচারীর খসড়া বেতন শিট তৈরি করে; যাদের হিসাব হয়নি তাদের তালিকা ফেরত দেয়।"""
+def generate_run(year, month, include_festival, include_boishakhi, note="", include_arrears=False, kind="salary",
+                 title=None, religion=None, multiplier=None, pct=None, amount=None):
+    """সকল সক্রিয় কর্মচারীর খসড়া শিট তৈরি করে; ফেরত: (run_id, [(কর্মচারী, কারণ)] যাদের হিসাব হয়নি)।"""
     conn = get_db()
     settings = get_settings()
     cur = conn.execute(
-        "INSERT INTO payroll_runs (year, month, include_festival, include_boishakhi, include_arrears, note) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (year, month, int(include_festival), int(include_boishakhi), int(include_arrears), note),
+        "INSERT INTO payroll_runs (year, month, kind, title, religion, multiplier, pct, amount, include_festival, "
+        "include_boishakhi, include_arrears, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (year, month, kind, title, religion, multiplier, pct, amount, int(include_festival), int(include_boishakhi),
+         int(include_arrears), note),
     )
-    run_id = cur.lastrowid
+    run = conn.execute("SELECT * FROM payroll_runs WHERE id = ?", (cur.lastrowid,)).fetchone()
     skipped = []
-    for emp in conn.execute("SELECT * FROM employees WHERE status = 'active' ORDER BY department, grade, code"):
-        s = compute_components(emp, settings, year, month, include_festival, include_boishakhi, include_arrears)
-        if s is None:
-            skipped.append(emp)
-        else:
-            insert_slip(run_id, emp, s)
+    for emp in conn.execute("SELECT * FROM employees WHERE status = 'active' ORDER BY code"):
+        s, why = slip_for(emp, run, settings)
+        if s is not None:
+            insert_slip(run["id"], emp, s)
+        elif why:
+            skipped.append((emp, why))
     conn.commit()
-    return run_id, skipped
+    return run["id"], skipped
 
 
-SLIP_COLUMNS = ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net", "phase"]
+SLIP_COLUMNS = ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net", "phase", "ref_basic"]
 
 
 def insert_slip(run_id, emp, s):
@@ -109,7 +179,7 @@ def insert_slip(run_id, emp, s):
             "other_allowance", "other_deduction"] + SLIP_COLUMNS
     vals = [run_id, emp["id"], emp["code"], emp["name_bn"], emp["designation"], emp["department"], emp["grade"],
             emp["account_no"], json.dumps(s["other_allowance"], ensure_ascii=False),
-            json.dumps(s["other_deduction"], ensure_ascii=False)] + [s[c] for c in SLIP_COLUMNS]
+            json.dumps(s["other_deduction"], ensure_ascii=False)] + [s.get(c) for c in SLIP_COLUMNS]
     get_db().execute(f"INSERT INTO payslips ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
 
 
@@ -117,8 +187,7 @@ def regenerate_slip(run, slip_row):
     """খসড়া শিটে কর্মচারীর বর্তমান তথ্য অনুযায়ী একটি বিবরণী পুনরায় হিসাব করে।"""
     conn = get_db()
     emp = conn.execute("SELECT * FROM employees WHERE id = ?", (slip_row["employee_id"],)).fetchone()
-    s = compute_components(emp, get_settings(), run["year"], run["month"], run["include_festival"],
-                           run["include_boishakhi"], run["include_arrears"])
+    s, _why = slip_for(emp, run, get_settings())
     if s is None:
         return False
     conn.execute("DELETE FROM payslips WHERE id = ?", (slip_row["id"],))

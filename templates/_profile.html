@@ -7,6 +7,7 @@
       <tr><th>পিতার নাম</th><td>{{ emp.father_name or '—' }}</td></tr>
       <tr><th>মাতার নাম</th><td>{{ emp.mother_name or '—' }}</td></tr>
       <tr><th>লিঙ্গ</th><td>{{ emp.gender or '—' }}</td></tr>
+      <tr><th>ধর্ম</th><td>{{ emp.religion or '—' }}</td></tr>
       <tr><th>জন্ম তারিখ</th><td>{{ emp.dob|bndate if emp.dob else '—' }}{% if age is not none %} (বয়স {{ age|bn }} বছর){% endif %}</td></tr>
       <tr><th>জাতীয় পরিচয়পত্র</th><td>{{ emp.nid|bn if emp.nid else '—' }}</td></tr>
       <tr><th>মোবাইল</th><td>{{ emp.mobile|bn if emp.mobile else '—' }}</td></tr>

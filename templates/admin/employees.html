@@ -18,9 +18,21 @@
   <div class="field" style="flex:2;min-width:200px"><label>খুঁজুন</label><input name="q" value="{{ q }}" placeholder="নাম, আইডি, পদবি বা মোবাইল"></div>
   <div class="field" style="flex:1;min-width:150px"><label>শাখা</label>
     <select name="dept"><option value="">সব শাখা</option>{% for d in depts %}<option {{ 'selected' if d == dept }}>{{ d }}</option>{% endfor %}</select></div>
+  <div class="field" style="flex:1;min-width:130px"><label>ধর্ম</label>
+    <select name="religion"><option value="">সব</option>{% for r in RELIGIONS %}<option {{ 'selected' if r == religion }}>{{ r }}</option>{% endfor %}<option value="none" {{ 'selected' if religion == 'none' }}>ধর্ম দেওয়া নেই</option></select></div>
   <div class="field" style="flex:1;min-width:130px"><label>অবস্থা</label>
     <select name="status"><option value="active" {{ 'selected' if status == 'active' }}>সক্রিয়</option><option value="inactive" {{ 'selected' if status == 'inactive' }}>নিষ্ক্রিয়</option><option value="" {{ 'selected' if status == '' }}>সব</option></select></div>
   <button type="submit">খুঁজুন</button>
+</form>
+{% if no_religion %}
+<div class="flash warn">{{ no_religion|bn }} জন সক্রিয় কর্মচারীর ধর্ম দেওয়া নেই — তাঁরা কোনো উৎসব ভাতা শিটে আসবেন না।
+  <a href="{{ url_for('employees', religion='none') }}">তালিকা দেখুন</a>, টিক দিয়ে নিচের "নির্বাচিতদের ধর্ম" দিয়ে একসাথে সেট করুন।</div>
+{% endif %}
+<form id="bulk" method="post" action="{{ url_for('employees_set_religion') }}" class="card inline-form" style="padding:10px 18px">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="field"><label>টিক দেওয়া কর্মচারীদের ধর্ম</label><select name="religion">{% for r in RELIGIONS %}<option>{{ r }}</option>{% endfor %}</select></div>
+  <button type="submit">সেট করুন</button>
+  <span class="hint" id="sel-count"></span>
 </form>
 {% if depts %}
 <details class="card" style="padding:12px 18px">
@@ -35,21 +47,30 @@
 {% endif %}
 <div class="table-wrap">
 <table>
-  <thead><tr><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>{{ 'কারণ ও তারিখ' if status != 'active' else 'মোবাইল' }}</th><th></th></tr></thead>
+  <thead><tr><th><input type="checkbox" id="all" aria-label="সবাই"></th><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th>ধর্ম</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>{{ 'কারণ ও তারিখ' if status != 'active' else 'মোবাইল' }}</th><th></th></tr></thead>
   <tbody>
   {% for e in rows %}
     <tr>
-      <td>{{ e.code }}</td>
+      <td><input type="checkbox" name="ids" value="{{ e.id }}" form="bulk" class="pick" aria-label="{{ e.name_bn }}"></td>
+      <td class="nowrap">{{ e.code }}</td>
       <td><a href="{{ url_for('employee_view', emp_id=e.id) }}"><b>{{ e.name_bn }}</b></a>{% if e.name_en %}<div class="small muted">{{ e.name_en }}</div>{% endif %}</td>
       <td>{{ e.designation or '—' }}</td><td>{{ e.department or '—' }}</td>
-      <td>{{ e.grade|bn if e.grade else '—' }}</td><td class="num">{{ e.basic|taka }}</td>
+      <td>{{ e.grade|bn if e.grade else '—' }}</td><td>{{ e.religion or '—' }}</td><td class="num">{{ e.basic|taka }}</td>
       <td>{% if e.status == 'inactive' %}<span class="badge off">{{ e.separation_reason or 'নিষ্ক্রিয়' }}</span> <span class="small">{{ e.separation_date|bndate }}</span>{% else %}{{ e.mobile|bn }}{% endif %}</td>
       <td class="actions-cell"><a class="btn sm" href="{{ url_for('employee_edit', emp_id=e.id) }}">সম্পাদনা</a></td>
     </tr>
   {% else %}
-    <tr><td colspan="8" class="muted">কোনো কর্মচারী পাওয়া যায়নি।</td></tr>
+    <tr><td colspan="10" class="muted">কোনো কর্মচারী পাওয়া যায়নি।</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+<script>
+  (function () {
+    var all = document.getElementById('all'), picks = document.querySelectorAll('.pick'), out = document.getElementById('sel-count');
+    function count() { var n = document.querySelectorAll('.pick:checked').length; out.textContent = n ? n.toLocaleString('bn-BD') + ' জন নির্বাচিত' : ''; }
+    all.addEventListener('change', function () { picks.forEach(function (c) { c.checked = all.checked; }); count(); });
+    picks.forEach(function (c) { c.addEventListener('change', count); });
+  })();
+</script>
 {% endblock %}

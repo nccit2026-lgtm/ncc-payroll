@@ -1,33 +1,74 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_badge %}
-{% block title %}মাসিক বেতন শিট{% endblock %}
+{% block title %}বেতন ও ভাতার শিট{% endblock %}
 {% block content %}
-<div class="topbar"><h1>মাসিক বেতন শিট</h1></div>
-<form class="card" method="post" action="{{ url_for('payroll_new') }}">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <h2>নতুন মাসের বেতন শিট তৈরি</h2>
-  <p class="hint" style="margin-top:-8px">মাস অনুযায়ী নিয়ম নিজে থেকে বসবে: জুলাই–ডিসেম্বর ২০২৬ = ১ম কিস্তি, জানুয়ারি–জুন ২০২৭ = ২য় কিস্তি, জুলাই–ডিসেম্বর ২০২৭ = পূর্ণ স্কেল, জানুয়ারি ২০২৮ থেকে নতুন হারে ভাতা। বকেয়া একবারই (একটি মাসের শিটে) যুক্ত করুন। পরে প্রত্যেকের বেতন আলাদাভাবে সংশোধন করা যাবে।</p>
-  <div class="inline-form">
-    <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
-    <div class="field" style="width:110px"><label>বছর</label><input name="year" value="{{ today.year }}" inputmode="numeric"></div>
-    <div class="field"><label class="check"><input type="checkbox" name="festival" value="1"> উৎসব ভাতা যুক্ত করুন</label></div>
-    <div class="field"><label class="check"><input type="checkbox" name="boishakhi" value="1"> বাংলা নববর্ষ ভাতা যুক্ত করুন</label></div>
-    <div class="field"><label class="check"><input type="checkbox" name="arrears" value="1"> জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া যুক্ত করুন</label></div>
-    <div class="field" style="flex:1;min-width:160px"><label>মন্তব্য (ঐচ্ছিক)</label><input name="note" placeholder="যেমন: ঈদুল আযহা উৎসব ভাতা সহ"></div>
+<div class="topbar"><h1>বেতন ও ভাতার শিট</h1></div>
+
+<div class="grid g2">
+  <form class="card" method="post" action="{{ url_for('payroll_new') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="kind" value="salary">
+    <h2>মাসিক বেতন শিট</h2>
+    <p class="hint" style="margin-top:-8px">মাস অনুযায়ী নিয়ম নিজে থেকে বসবে: জুলাই–ডিসেম্বর ২০২৬ = ১ম কিস্তি, জানুয়ারি–জুন ২০২৭ = ২য় কিস্তি, জুলাই–ডিসেম্বর ২০২৭ = পূর্ণ স্কেল, জানুয়ারি ২০২৮ থেকে নতুন হারে ভাতা।</p>
+    <div class="inline-form">
+      <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
+      <div class="field" style="width:100px"><label>বছর</label><input name="year" value="{{ today.year }}" inputmode="numeric"></div>
+    </div>
+    <label class="check" style="margin:10px 0"><input type="checkbox" name="arrears" value="1"> এই শিটেই জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া যুক্ত করুন</label>
+    <div class="field"><label>মন্তব্য (ঐচ্ছিক)</label><input name="note"></div>
+    <button class="primary" type="submit">বেতন শিট তৈরি করুন</button>
+  </form>
+
+  <form class="card" method="post" action="{{ url_for('payroll_new') }}" id="extra">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <h2>বোনাস / বকেয়া / ভাতা (বেতন ছাড়া আলাদা শিট)</h2>
+    <div class="inline-form">
+      <div class="field" style="flex:1;min-width:200px"><label>কী দেবেন</label>
+        <select name="kind" id="kind">
+          <option value="festival">উৎসব ভাতা (ধর্ম অনুযায়ী)</option>
+          <option value="boishakhi">বাংলা নববর্ষ ভাতা (সবাই, মূল বেতনের {{ settings.boishakhi_pct|pct }}%)</option>
+          <option value="arrears">বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬)</option>
+          <option value="other">অন্যান্য ভাতা</option>
+        </select></div>
+      <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
+      <div class="field" style="width:100px"><label>বছর</label><input name="year" value="{{ today.year }}" inputmode="numeric"></div>
+    </div>
+    <div class="inline-form" data-for="festival" style="margin-top:10px">
+      <div class="field"><label>ধর্ম</label><select name="religion" id="religion">{% for r in RELIGIONS if r != 'অন্যান্য' %}<option value="{{ r }}" data-mult="{{ FESTIVAL_MULTIPLIER[r] }}">{{ r }}{{ ' — ঈদ' if r == 'ইসলাম' }}</option>{% endfor %}</select></div>
+      <div class="field" style="width:150px"><label>মূল বেতনের কত গুণ</label><input name="multiplier" id="mult" value="1" inputmode="decimal"></div>
+      <div class="hint" style="flex-basis:100%">ঈদ (ইসলাম) = এক মূল বেতন; হিন্দু, বৌদ্ধ, খ্রিস্টান = দুই মূল বেতন। শুধু নির্বাচিত ধর্মের কর্মচারীরা পাবেন।</div>
+    </div>
+    <div class="inline-form" data-for="other" style="margin-top:10px">
+      <div class="field"><label>মূল বেতনের %</label><input name="pct" inputmode="decimal" style="width:120px"></div>
+      <div class="field"><label>অথবা জনপ্রতি টাকা</label><input name="amount" inputmode="decimal" style="width:140px"></div>
+    </div>
+    <div class="field" style="margin-top:10px"><label>শিটের নাম</label><input name="title" id="title" placeholder="যেমন: ঈদুল ফিতর উৎসব ভাতা ২০২৭"></div>
+    <div class="field"><label>মন্তব্য (ঐচ্ছিক)</label><input name="note"></div>
     <button class="primary" type="submit">শিট তৈরি করুন</button>
-  </div>
-</form>
+  </form>
+</div>
+
 <div class="table-wrap">
 <table>
-  <thead><tr><th>মাস</th><th>অবস্থা</th><th class="num">কর্মচারী</th><th class="num">মোট বেতন</th><th class="num">মোট কর্তন</th><th class="num">নিট প্রদান</th><th>মন্তব্য</th><th></th></tr></thead>
+  <thead><tr><th>মাস</th><th>শিট</th><th>অবস্থা</th><th class="num">কর্মচারী</th><th class="num">মোট</th><th class="num">মোট কর্তন</th><th class="num">নিট প্রদান</th><th>মন্তব্য</th><th></th></tr></thead>
   <tbody>
   {% for r in runs %}
-    <tr><td><a href="{{ url_for('payroll_view', run_id=r.id) }}"><b>{{ month_label(r.year, r.month) }}</b></a></td><td>{{ status_badge(r.status) }}</td>
+    <tr><td><a href="{{ url_for('payroll_view', run_id=r.id) }}"><b>{{ month_label(r.year, r.month) }}</b></a></td>
+      <td>{% if r.kind == 'salary' %}মাসিক বেতন{% else %}<span class="badge final">{{ r.title or RUN_KINDS[r.kind] }}</span>{% endif %}</td>
+      <td>{{ status_badge(r.status) }}</td>
       <td class="num">{{ r.headcount|bn }}</td><td class="num">{{ r.gross|taka }}</td><td class="num">{{ r.deduction|taka }}</td><td class="num"><b>{{ r.net|taka }}</b></td>
-      <td class="small">{{ r.note or '' }}{% if r.include_festival %} <span class="badge final">উৎসব</span>{% endif %}{% if r.include_boishakhi %} <span class="badge final">নববর্ষ</span>{% endif %}{% if r.include_arrears %} <span class="badge final">বকেয়া</span>{% endif %}</td>
+      <td class="small">{{ r.note or '' }}{% if r.include_arrears %} <span class="badge final">বকেয়াসহ</span>{% endif %}</td>
       <td class="actions-cell"><a class="btn sm" href="{{ url_for('payroll_view', run_id=r.id) }}">খুলুন</a> <a class="btn sm" href="{{ url_for('payroll_excel', run_id=r.id) }}">Excel</a></td></tr>
-  {% else %}<tr><td colspan="8" class="muted">এখনো কোনো বেতন শিট তৈরি হয়নি।</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="9" class="muted">এখনো কোনো শিট তৈরি হয়নি।</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
+<script>
+  (function () {
+    var kind = document.getElementById('kind'), rel = document.getElementById('religion'), mult = document.getElementById('mult');
+    function show() { document.querySelectorAll('#extra [data-for]').forEach(function (el) { el.style.display = el.dataset.for === kind.value ? '' : 'none'; }); }
+    rel.addEventListener('change', function () { mult.value = rel.options[rel.selectedIndex].dataset.mult; });
+    kind.addEventListener('change', show); show();
+  })();
+</script>
 {% endblock %}

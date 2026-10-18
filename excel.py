@@ -87,55 +87,63 @@ def _save(wb):
     return buf
 
 
-def payroll_workbook(run, slips, settings):
+def payroll_workbook(run, slips, settings, group=True, filter_label=""):
     wb = Workbook()
     ws = wb.active
-    ws.title = "বেতন শিট"
+    salary = run["kind"] == "salary"
+    ws.title = "বেতন শিট" if salary else "ভাতা শিট"
     period = f"{MONTHS_BN[run['month']]} {bn_num(run['year'])}"
+    sheet_title = (f"মাসিক বেতন শিট — {period}" if salary else f"{run['title']} — {period}") + \
+        (f" ({filter_label})" if filter_label else "")
 
     # যে ভাতা এ মাসে কারো নেই সেই কলাম বাদ
     all_cols = [("basic", "মূল বেতন"), ("house_rent", "বাড়িভাড়া"), ("medical", "চিকিৎসা"),
                 ("education", "শিক্ষা সহায়ক"), ("tiffin", "টিফিন"), ("transport", "যাতায়াত"), ("mobile", "মোবাইল"),
                 ("wash", "ধোলাই"), ("special", "বিশেষ সুবিধা (মহার্ঘ)"), ("pf_office", "অফিস প্রদত্ত PF"),
                 ("festival", "উৎসব ভাতা"), ("boishakhi", "নববর্ষ ভাতা")]
-    allowance_cols = [(k, h) for k, h in all_cols if k in ("basic", "house_rent", "medical") or any(s[k] for s in slips)]
+    forced = ("basic", "house_rent", "medical") if salary else ()
+    allowance_cols = [(k, h) for k, h in all_cols if k in forced or any(s[k] for s in slips)]
     has_pf = any(s["pf_fund"] or s["pf_own"] for s in slips)
     has_stamp = any(s["revenue_stamp"] for s in slips)
     ded_cols = ([("pf_fund", "PF (অফিস অংশ জমা)"), ("pf_own", "PF (নিজ অংশ)")] if has_pf else []) + \
         ([("revenue_stamp", "রাজস্ব স্ট্যাম্প")] if has_stamp else [])
 
-    info = ["ক্রম", "আইডি", "নাম", "পদবি", "গ্রেড", "হিসাব নং"]
+    info = ["ক্রম", "আইডি", "নাম", "পদবি", "গ্রেড", "হিসাব নং"] + ([] if salary else ["ভিত্তি মূল বেতন"])
     headers = (info + [h for _, h in allowance_cols] + ["অন্যান্য ভাতা / বকেয়া", "মোট বেতন"] + [h for _, h in ded_cols]
                + ["অন্যান্য কর্তন", "মোট কর্তন", "নিট প্রদেয়"])
     n = len(headers)
     money_from = len(info) + 1
-    _title(ws, settings, f"মাসিক বেতন শিট — {period}", n)
+    _title(ws, settings, sheet_title, n)
     hr = 5
     _header(ws, hr, headers)
 
     # শাখাভিত্তিক: শাখার নাম → কর্মচারীরা → উপমোট → একটি ফাঁকা সারি
     r = hr
     subtotal_rows = []
-    for dept, group in group_by_department(slips):
-        r += 1
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
-        c = ws.cell(row=r, column=1, value=f"{dept}  ({bn_num(len(group))} জন)")
-        c.font = Font(name=FONT, bold=True, size=12, color="1F5F4A")
-        c.fill = DEPT_FILL
-        c.border = BORDER
+    for dept, members in (group_by_department(slips) if group else [(None, slips)]):
+        if dept is not None:
+            r += 1
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+            c = ws.cell(row=r, column=1, value=f"{dept}  ({bn_num(len(members))} জন)")
+            c.font = Font(name=FONT, bold=True, size=12, color="1F5F4A")
+            c.fill = DEPT_FILL
+            c.border = BORDER
         first = r + 1
-        for i, s in enumerate(group, 1):
+        for i, s in enumerate(members, 1):
             r += 1
             oa = round(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])), 2)
             od = round(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])), 2)
             values = ([i, s["code"], s["name_bn"], s["designation"], s["grade"], s["account_no"]]
-                      + [s[k] for k, _ in allowance_cols] + [oa, s["gross"]] + [s[k] for k, _ in ded_cols]
+                      + ([] if salary else [s["ref_basic"]]) + [s[k] for k, _ in allowance_cols] + [oa, s["gross"]] + [s[k] for k, _ in ded_cols]
                       + [od, s["total_deduction"], s["net"]])
             for col, v in enumerate(values, 1):
                 ws.cell(row=r, column=col, value=v)
         _style_body(ws, first, r, n, money_from)
+        if not salary:
+            for rr in range(first, r + 1):
+                ws.cell(row=rr, column=len(info)).number_format = MONEY
         r += 1
-        _totals_row(ws, r, first, r - 1, 3, range(money_from, n + 1), label="উপমোট", ncols=n)
+        _totals_row(ws, r, first, r - 1, 3, range(money_from, n + 1), label="উপমোট" if dept is not None else "মোট", ncols=n)
         subtotal_rows.append(r)
         r += 1  # শাখার মাঝে বিরতি
     r += 1
@@ -151,7 +159,7 @@ def payroll_workbook(run, slips, settings):
             cell.number_format = MONEY_PAISA
     _signature(ws, r + 4, n, settings)
     ws.freeze_panes = f"D{hr + 1}"
-    _widths(ws, [6, 11, 26, 22, 7, 18] + [12] * (n - len(info)))
+    _widths(ws, [6, 11, 26, 22, 7, 18] + ([] if salary else [14]) + [12] * (n - len(info)))
     ws.print_title_rows = f"{hr}:{hr}"
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
@@ -161,7 +169,7 @@ def payroll_workbook(run, slips, settings):
     # ব্যাংক অ্যাডভাইস
     bank = wb.create_sheet("ব্যাংক অ্যাডভাইস")
     bh = ["ক্রম", "আইডি", "নাম", "পদবি", "হিসাব নং", "নিট প্রদেয় (টাকা)"]
-    _title(bank, settings, f"ব্যাংক অ্যাডভাইস — {period}", len(bh))
+    _title(bank, settings, f"ব্যাংক অ্যাডভাইস — {period}" + ("" if salary else f" ({run['title']})"), len(bh))
     _header(bank, hr, bh)
     for i, s in enumerate(slips, 1):
         for col, v in enumerate([i, s["code"], s["name_bn"], s["designation"], s["account_no"], s["net"]], 1):
@@ -248,6 +256,7 @@ EMPLOYEE_COLUMNS = [
     ("special_rate", "মহার্ঘ হার (auto/0.10/0.15/0)"),
     ("join_date", "যোগদানের তারিখ (YYYY-MM-DD)"), ("dob", "জন্ম তারিখ (YYYY-MM-DD)"),
     ("prl_date", "পিআরএল তারিখ (YYYY-MM-DD)"), ("employment_type", "চাকরির ধরন"), ("status", "অবস্থা (active/inactive)"),
+    ("religion", "ধর্ম (ইসলাম/হিন্দু/বৌদ্ধ/খ্রিস্টান/অন্যান্য)"),
     ("father_name", "পিতার নাম"), ("mother_name", "মাতার নাম"), ("gender", "লিঙ্গ"), ("nid", "এনআইডি"),
     ("mobile", "মোবাইল"), ("email", "ইমেইল"), ("address", "ঠিকানা"), ("tin", "টিআইএন"),
     ("bank_name", "ব্যাংক"), ("bank_branch", "শাখা (ব্যাংক)"), ("account_no", "হিসাব নং"),

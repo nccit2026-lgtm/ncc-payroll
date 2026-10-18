@@ -17,7 +17,8 @@ from bn import MONTHS_BN, bn_date, bn_num, bn_pct, bn_taka, month_label  # noqa:
 from db import close_db, get_db, get_settings, init_db, save_setting
 import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
-                     generate_run, group_by_department, insert_slip, regenerate_slip)
+                     FESTIVAL_MULTIPLIER, RELIGIONS, RUN_KINDS, arrears_already_given, generate_run,
+                     group_by_department, insert_slip, regenerate_slip, slip_for)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,7 +58,8 @@ def create_app(database=None):
     app.teardown_appcontext(close_db)
     app.jinja_env.filters.update(bn=bn_num, taka=bn_taka, bndate=bn_date, pct=bn_pct, plain=plain_num)
     app.jinja_env.globals.update(MONTHS_BN=MONTHS_BN, month_label=month_label, FIELD_LABELS=FIELD_LABELS,
-                                 loads=json.loads)
+                                 loads=json.loads, RUN_KINDS=RUN_KINDS, RELIGIONS=RELIGIONS,
+                                 FESTIVAL_MULTIPLIER=FESTIVAL_MULTIPLIER)
     with app.app_context():
         init_db()
     register_routes(app)
@@ -157,7 +159,7 @@ def xlsx_response(buf, filename):
 
 
 EMPLOYEE_TEXT_FIELDS = ["code", "name_bn", "name_en", "father_name", "mother_name", "gender", "nid", "mobile",
-                        "email", "address", "designation", "department", "employment_type", "status", "tin",
+                        "email", "address", "designation", "department", "employment_type", "status", "tin", "religion",
                         "bank_name", "bank_branch", "account_no"]
 EMPLOYEE_DATE_FIELDS = ["dob", "join_date", "prl_date"]
 OVERRIDE_FIELDS = ["ovr_house_rent", "ovr_medical", "ovr_education", "ovr_tiffin", "ovr_transport"]
@@ -176,6 +178,17 @@ IMPORT_DEFAULTS = {"inc_2026": 1, "inc_2027": 1, "tiffin": 1, "transport": 1, "p
                    "special_rate": "auto", "status": "active", "employment_type": "স্থায়ী", "children": 0}
 
 
+RELIGION_ALIASES = {"ইসলাম": "ইসলাম", "মুসলিম": "ইসলাম", "মুসলমান": "ইসলাম", "islam": "ইসলাম", "muslim": "ইসলাম",
+                    "হিন্দু": "হিন্দু", "সনাতন": "হিন্দু", "hindu": "হিন্দু", "বৌদ্ধ": "বৌদ্ধ", "buddhist": "বৌদ্ধ",
+                    "buddhism": "বৌদ্ধ", "খ্রিস্টান": "খ্রিস্টান", "খ্রিষ্টান": "খ্রিস্টান", "christian": "খ্রিস্টান",
+                    "অন্যান্য": "অন্যান্য", "other": "অন্যান্য"}
+
+
+def normalize_religion(v):
+    s = str(v or "").strip()
+    return RELIGION_ALIASES.get(s.lower(), RELIGION_ALIASES.get(s)) if s else None
+
+
 def parse_flag(v):
     s = str(v if v is not None else "").translate(BN_TO_EN).strip().lower()
     return s not in ("", "0", "না", "no", "n", "false", "none")
@@ -185,6 +198,7 @@ def employee_from_form(form):
     data = {f: (form.get(f) or "").strip() or None for f in EMPLOYEE_TEXT_FIELDS}
     data.update({f: clean_date(form.get(f)) for f in EMPLOYEE_DATE_FIELDS})
     data["status"] = data["status"] or "active"
+    data["religion"] = normalize_religion(data["religion"])
     data["grade"] = to_int(form.get("grade"), None)
     data["basic"] = optional_num(form.get("basic")) or 0
     data["children"] = min(to_int(form.get("children")), 2)
@@ -233,12 +247,14 @@ def basic_range_warning(data):
               f"মেলেনি ({bn_taka(steps[0])}–{bn_taka(steps[-1])})। হিসাব হবে, তবে সংখ্যাটি যাচাই করুন।", "warn")
 
 
-def run_totals():
+def run_totals(kind=None):
+    """প্রতিটি শিটের মোট; kind='salary' দিলে শুধু মাসিক বেতন শিট।"""
     return get_db().execute(
         """SELECT r.*, COUNT(p.id) AS headcount, COALESCE(SUM(p.gross),0) AS gross,
                   COALESCE(SUM(p.total_deduction),0) AS deduction, COALESCE(SUM(p.net),0) AS net
            FROM payroll_runs r LEFT JOIN payslips p ON p.run_id = r.id
-           GROUP BY r.id ORDER BY r.year, r.month""").fetchall()
+           WHERE ? IS NULL OR r.kind = ?
+           GROUP BY r.id ORDER BY r.year, r.month, r.id""", (kind, kind)).fetchall()
 
 
 def get_run_or_404(run_id):
@@ -267,9 +283,9 @@ def pay_context(emp):
 
 
 def employee_slips(emp_id, final_only):
-    sql = ("SELECT p.*, r.year, r.month, r.status FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+    sql = ("SELECT p.*, r.year, r.month, r.status, r.kind, r.title FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
            "WHERE p.employee_id = ?" + (" AND r.status = 'final'" if final_only else "") +
-           " ORDER BY r.year DESC, r.month DESC")
+           " ORDER BY r.year DESC, r.month DESC, r.id DESC")
     return get_db().execute(sql, (emp_id,)).fetchall()
 
 
@@ -357,7 +373,7 @@ def register_routes(app):
     @admin_required
     def admin_dashboard():
         conn = get_db()
-        runs = run_totals()
+        runs = run_totals("salary")
         stats = conn.execute(
             "SELECT COUNT(*) AS total, SUM(status = 'active') AS active, "
             "COALESCE(SUM(CASE WHEN status = 'active' THEN basic END), 0) AS basic_sum FROM employees").fetchone()
@@ -365,7 +381,7 @@ def register_routes(app):
             "SELECT COALESCE(department, '—') AS department, COUNT(*) AS n FROM employees WHERE status = 'active' "
             "GROUP BY department ORDER BY n DESC").fetchall()
         today = date.today()
-        this_run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ?",
+        this_run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary'",
                                 (today.year, today.month)).fetchone()
         changes = conn.execute(
             "SELECT c.*, e.name_bn, e.code FROM employee_changes c JOIN employees e ON e.id = c.employee_id "
@@ -392,11 +408,20 @@ def register_routes(app):
         if status:
             sql += " AND status = ?"
             args.append(status)
+        religion = request.args.get("religion", "")
+        if religion == "none":
+            sql += " AND (religion IS NULL OR religion = '')"
+        elif religion:
+            sql += " AND religion = ?"
+            args.append(religion)
         rows = get_db().execute(sql + " ORDER BY code", args).fetchall()
         depts = [r[0] for r in get_db().execute(
             "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
         counts = dict(get_db().execute("SELECT status, COUNT(*) FROM employees GROUP BY status").fetchall())
+        no_religion = get_db().execute("SELECT COUNT(*) FROM employees WHERE status = 'active' AND "
+                                       "(religion IS NULL OR religion = '')").fetchone()[0]
         return render_template("admin/employees.html", rows=rows, q=q, dept=dept, status=status, depts=depts,
+                               religion=religion, no_religion=no_religion,
                                counts=counts, next_code=next_code())
 
     def employee_form_context(emp=None):
@@ -602,6 +627,20 @@ def register_routes(app):
             return redirect(url_for("employees"))
         return render_template("admin/import.html")
 
+    @app.route("/admin/employees/religion", methods=["POST"])
+    @admin_required
+    def employees_set_religion():
+        """তালিকা থেকে টিক দেওয়া কর্মচারীদের ধর্ম একসাথে সেট।"""
+        religion = request.form.get("religion")
+        ids = [to_int(i) for i in request.form.getlist("ids")]
+        if religion in RELIGIONS and ids:
+            get_db().executemany("UPDATE employees SET religion = ? WHERE id = ?", [(religion, i) for i in ids])
+            get_db().commit()
+            flash(f"{bn_num(len(ids))} জনের ধর্ম '{religion}' সেট করা হয়েছে।", "ok")
+        else:
+            flash("ধর্ম ও অন্তত একজন কর্মচারী নির্বাচন করুন।", "error")
+        return redirect(request.referrer or url_for("employees"))
+
     @app.route("/admin/departments/rename", methods=["POST"])
     @admin_required
     def department_rename():
@@ -640,27 +679,81 @@ def register_routes(app):
     @app.route("/admin/payroll/new", methods=["POST"])
     @admin_required
     def payroll_new():
-        year, month = to_int(request.form.get("year")), to_int(request.form.get("month"))
-        if not (2000 <= year <= 2100 and 1 <= month <= 12):
+        f = request.form
+        year, month = to_int(f.get("year")), to_int(f.get("month"))
+        kind = f.get("kind") or "salary"
+        if not (2000 <= year <= 2100 and 1 <= month <= 12) or kind not in RUN_KINDS:
             flash("সঠিক মাস ও বছর দিন।", "error")
             return redirect(url_for("payroll_list"))
-        existing = get_db().execute("SELECT id FROM payroll_runs WHERE year = ? AND month = ?", (year, month)).fetchone()
-        if existing:
-            flash(f"{month_label(year, month)} এর বেতন শিট আগেই তৈরি হয়েছে।", "warn")
-            return redirect(url_for("payroll_view", run_id=existing["id"]))
-        run_id, skipped = generate_run(year, month, bool(request.form.get("festival")), bool(request.form.get("boishakhi")),
-                                       request.form.get("note", "").strip(), bool(request.form.get("arrears")))
-        flash(f"{month_label(year, month)} এর খসড়া বেতন শিট তৈরি হয়েছে। যাচাই করে 'চূড়ান্ত করুন' চাপুন।", "ok")
+        conn = get_db()
+        if kind == "salary":
+            existing = conn.execute("SELECT id FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary'",
+                                    (year, month)).fetchone()
+            if existing:
+                flash(f"{month_label(year, month)} এর বেতন শিট আগেই তৈরি হয়েছে।", "warn")
+                return redirect(url_for("payroll_view", run_id=existing["id"]))
+        if (kind == "arrears" or (kind == "salary" and f.get("arrears"))) and (prev := arrears_already_given()):
+            flash(f"জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া আগেই {month_label(prev['year'], prev['month'])} এর শিটে দেওয়া হয়েছে। "
+                  "দুবার দেওয়া যাবে না — আগের শিটটি মুছে তারপর নতুন করে দিন।", "error")
+            return redirect(url_for("payroll_list"))
+        opts = {"kind": kind, "title": (f.get("title") or "").strip() or None}
+        if kind == "festival":
+            religion = f.get("religion") if f.get("religion") in RELIGIONS else None
+            if not religion:
+                flash("উৎসব ভাতার জন্য ধর্ম নির্বাচন করুন।", "error")
+                return redirect(url_for("payroll_list"))
+            opts.update(religion=religion,
+                        multiplier=to_float(f.get("multiplier"), 0) or FESTIVAL_MULTIPLIER.get(religion, 1),
+                        title=opts["title"] or f"উৎসব ভাতা ({religion})")
+        elif kind == "other":
+            pct, amount = to_float(f.get("pct"), 0), to_float(f.get("amount"), 0)
+            if not opts["title"] or not (pct or amount):
+                flash("অন্যান্য ভাতার নাম এবং মূল বেতনের % অথবা জনপ্রতি টাকা দিন।", "error")
+                return redirect(url_for("payroll_list"))
+            opts.update(pct=pct or None, amount=None if pct else amount)
+        elif kind != "salary":
+            opts["title"] = opts["title"] or RUN_KINDS[kind]
+        run_id, skipped = generate_run(year, month, False, False, f.get("note", "").strip(),
+                                       kind == "salary" and bool(f.get("arrears")), **opts)
+        label = RUN_KINDS[kind] if kind == "salary" else opts["title"]
+        n = conn.execute("SELECT COUNT(*) FROM payslips WHERE run_id = ?", (run_id,)).fetchone()[0]
+        flash(f"{month_label(year, month)} — {label}: {bn_num(n)} জনের খসড়া শিট তৈরি হয়েছে। যাচাই করে 'চূড়ান্ত করুন' চাপুন।", "ok")
         if skipped:
-            flash(f"{bn_num(len(skipped))} জনের গ্রেড/মূল বেতন অসম্পূর্ণ, তাই শিটে আসেননি: "
-                  + ", ".join(e["name_bn"] for e in skipped[:15]), "warn")
+            flash(f"{bn_num(len(skipped))} জন শিটে আসেননি: "
+                  + ", ".join(f"{e['name_bn']} ({why})" for e, why in skipped[:20]), "warn")
         return redirect(url_for("payroll_view", run_id=run_id))
+
+    def filtered_slips(run_id, args):
+        """শিট দেখা ও Excel এর আগে ফিল্টার/সাজানো: শাখা ও গ্রেড (একাধিক), সাজানোর ক্রম, শাখাভিত্তিক ভাগ।"""
+        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY code", (run_id,)).fetchall()
+        all_depts = list(dict.fromkeys(s["department"] or "শাখা উল্লেখ নেই" for s in slips))
+        all_grades = sorted({s["grade"] for s in slips if s["grade"]})
+        depts = [d for d in args.getlist("dept") if d]
+        grades = [to_int(g) for g in args.getlist("grade") if g]
+        if depts:
+            slips = [s for s in slips if (s["department"] or "শাখা উল্লেখ নেই") in depts]
+        if grades:
+            slips = [s for s in slips if s["grade"] in grades]
+        sort = args.get("sort", "code")
+        keys = {"code": lambda s: s["code"] or "", "grade": lambda s: (s["grade"] or 99, s["code"] or ""),
+                "name": lambda s: s["name_bn"] or "", "basic": lambda s: (-(s["basic"] or s["ref_basic"] or 0), s["code"]),
+                "net": lambda s: (-s["net"], s["code"] or "")}
+        slips = sorted(slips, key=keys.get(sort, keys["code"]))
+        group = "1" in args.getlist("group") if "group" in args else True
+        parts = []
+        if depts:
+            parts.append("শাখা: " + ", ".join(depts))
+        if grades:
+            parts.append("গ্রেড: " + ", ".join(bn_num(g) for g in sorted(grades)))
+        return {"slips": slips, "all_depts": all_depts, "all_grades": all_grades, "sel_depts": depts,
+                "sel_grades": grades, "sort": sort, "group": group, "filter_label": "; ".join(parts)}
 
     @app.route("/admin/payroll/<int:run_id>")
     @admin_required
     def payroll_view(run_id):
         run = get_run_or_404(run_id)
-        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY code", (run_id,)).fetchall()
+        fs = filtered_slips(run_id, request.args)
+        slips = fs["slips"]
         totals = {f: round(sum(s[f] for s in slips), 2)
                   for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net"]}
         on_prl = {e["id"] for e in get_db().execute("SELECT id, dob, prl_date FROM employees")
@@ -668,22 +761,26 @@ def register_routes(app):
                   <= date(run["year"], run["month"], 1)}
         missing = get_db().execute(
             "SELECT * FROM employees WHERE status = 'active' AND id NOT IN (SELECT employee_id FROM payslips WHERE run_id = ?)",
-            (run_id,)).fetchall()
+            (run_id,)).fetchall() if run["kind"] == "salary" else []
         prev = get_db().execute(
             "SELECT COALESCE(SUM(p.net),0) AS net FROM payroll_runs r JOIN payslips p ON p.run_id = r.id "
-            "WHERE r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
+            "WHERE r.kind = 'salary' AND r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
+        grouped = group_by_department(slips) if fs["group"] else [(None, slips)]
         groups = [(d, g, {f: round(sum(s[f] for s in g), 2) for f in ["gross", "total_deduction", "net"]})
-                  for d, g in group_by_department(slips)]
-        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing, groups=groups,
-                               prev_net=prev["net"] if prev else 0, on_prl=on_prl)
+                  for d, g in grouped]
+        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing,
+                               groups=groups, prev_net=prev["net"] if prev and run["kind"] == "salary" else 0,
+                               on_prl=on_prl, fs=fs, query=request.query_string.decode())
 
     @app.route("/admin/payroll/<int:run_id>/excel")
     @admin_required
     def payroll_excel(run_id):
         run = get_run_or_404(run_id)
-        slips = get_db().execute("SELECT * FROM payslips WHERE run_id = ? ORDER BY code", (run_id,)).fetchall()
-        return xlsx_response(excel.payroll_workbook(run, slips, get_settings()),
-                             f"salary-sheet-{run['year']}-{run['month']:02d}.xlsx")
+        fs = filtered_slips(run_id, request.args)
+        name = "salary-sheet" if run["kind"] == "salary" else run["kind"]
+        return xlsx_response(excel.payroll_workbook(run, fs["slips"], get_settings(), group=fs["group"],
+                                                    filter_label=fs["filter_label"]),
+                             f"{name}-{run['year']}-{run['month']:02d}.xlsx")
 
     @app.route("/admin/payroll/<int:run_id>/finalize", methods=["POST"])
     @admin_required
@@ -726,8 +823,7 @@ def register_routes(app):
             settings = get_settings()
             for emp in conn.execute("SELECT * FROM employees WHERE status = 'active' AND id NOT IN "
                                     "(SELECT employee_id FROM payslips WHERE run_id = ?)", (run_id,)).fetchall():
-                s = compute_components(emp, settings, run["year"], run["month"], run["include_festival"],
-                                       run["include_boishakhi"], run["include_arrears"])
+                s, _why = slip_for(emp, run, settings)
                 if s:
                     insert_slip(run_id, emp, s)
             conn.commit()
@@ -784,9 +880,11 @@ def register_routes(app):
         runs = run_totals()
         rows, prev = [], None
         for r in runs:
-            rows.append({"run": r, "diff": (r["net"] - prev["net"]) if prev else None,
-                         "hdiff": (r["headcount"] - prev["headcount"]) if prev else None})
-            prev = r
+            is_salary = r["kind"] == "salary"
+            rows.append({"run": r, "diff": round(r["net"] - prev["net"], 2) if prev and is_salary else None,
+                         "hdiff": (r["headcount"] - prev["headcount"]) if prev and is_salary else None})
+            if is_salary:
+                prev = r
         years = {}
         for r in runs:
             y = years.setdefault(r["year"], {"gross": 0, "deduction": 0, "net": 0, "months": 0})
@@ -795,7 +893,7 @@ def register_routes(app):
             y["net"] += r["net"]
             y["months"] += 1
         return render_template("admin/reports.html", rows=list(reversed(rows)), years=years,
-                               chart=runs[-12:])
+                               chart=run_totals("salary")[-12:])
 
     @app.route("/admin/reports/excel")
     @admin_required
@@ -891,7 +989,7 @@ def register_routes(app):
     @login_required
     def payslip(slip_id):
         slip = get_db().execute(
-            "SELECT p.*, r.year, r.month, r.status FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE p.id = ?",
+            "SELECT p.*, r.year, r.month, r.status, r.kind, r.title FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE p.id = ?",
             (slip_id,)).fetchone() or abort(404)
         user = current_user()
         if user["role"] != "admin" and (slip["employee_id"] != user["employee_id"] or slip["status"] != "final"):

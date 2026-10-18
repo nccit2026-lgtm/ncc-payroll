@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS employees (
     father_name      TEXT,
     mother_name      TEXT,
     gender           TEXT,
+    religion         TEXT,                          -- ইসলাম / হিন্দু / বৌদ্ধ / খ্রিস্টান / অন্যান্য
     dob              TEXT,                          -- YYYY-MM-DD
     nid              TEXT,
     mobile           TEXT,
@@ -83,15 +84,21 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     year              INTEGER NOT NULL,
     month             INTEGER NOT NULL,
+    kind              TEXT NOT NULL DEFAULT 'salary',  -- salary / festival / boishakhi / arrears / other
+    title             TEXT,                            -- যেমন: ঈদুল ফিতর উৎসব ভাতা
+    religion          TEXT,                            -- উৎসব ভাতা: যে ধর্মের কর্মচারীরা পাবেন
+    multiplier        REAL,                            -- উৎসব ভাতা: মূল বেতনের কত গুণ
+    pct               REAL,                            -- অন্যান্য ভাতা: মূল বেতনের %
+    amount            REAL,                            -- অন্যান্য ভাতা: জনপ্রতি নির্দিষ্ট টাকা
     status            TEXT NOT NULL DEFAULT 'draft',   -- draft / final
     include_festival  INTEGER NOT NULL DEFAULT 0,
     include_boishakhi INTEGER NOT NULL DEFAULT 0,
     include_arrears   INTEGER NOT NULL DEFAULT 0,
     note              TEXT,
     created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
-    finalized_at      TEXT,
-    UNIQUE (year, month)
+    finalized_at      TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_runs_month ON payroll_runs(year, month);
 
 -- প্রত্যেক কর্মচারীর মাসিক বেতন বিবরণী (তৈরির সময়ের তথ্যের স্থায়ী কপি)
 CREATE TABLE IF NOT EXISTS payslips (
@@ -119,6 +126,7 @@ CREATE TABLE IF NOT EXISTS payslips (
     pf_fund         REAL NOT NULL DEFAULT 0,
     pf_own          REAL NOT NULL DEFAULT 0,
     phase           TEXT,
+    ref_basic       REAL,                           -- বোনাস/ভাতার শিটে হিসাবের ভিত্তি মূল বেতন
     other_allowance TEXT NOT NULL DEFAULT '[]',     -- JSON [{name, amount}]
     gpf             INTEGER NOT NULL DEFAULT 0,
     revenue_stamp   INTEGER NOT NULL DEFAULT 0,

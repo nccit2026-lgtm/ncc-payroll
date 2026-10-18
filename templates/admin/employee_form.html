@@ -22,6 +22,7 @@
       {{ f('name_en', 'নাম (ইংরেজিতে)') }}
       {{ f('father_name', 'পিতার নাম') }}
       {{ f('mother_name', 'মাতার নাম') }}
+      <div class="field"><label>ধর্ম</label><select name="religion"><option value="">— নির্বাচন করুন —</option>{% for r in RELIGIONS %}<option {{ 'selected' if emp and emp.religion == r }}>{{ r }}</option>{% endfor %}</select><div class="hint">উৎসব ভাতার জন্য লাগবে</div></div>
       <div class="field"><label>লিঙ্গ</label><select name="gender">{% for g in ['', 'পুরুষ', 'মহিলা', 'অন্যান্য'] %}<option {{ 'selected' if emp and emp.gender == g }}>{{ g }}</option>{% endfor %}</select></div>
       {{ f('dob', 'জন্ম তারিখ', 'date', 'চিকিৎসা ভাতা (৫০ বছর) হিসাবে লাগবে') }}
       {{ f('nid', 'জাতীয় পরিচয়পত্র নং') }}

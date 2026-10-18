@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import status_badge %}
-{% block title %}বেতন শিট {{ month_label(run.year, run.month) }}{% endblock %}
+{% block title %}{{ 'বেতন শিট' if run.kind == 'salary' else run.title }} {{ month_label(run.year, run.month) }}{% endblock %}
 {% block content %}
-{% set draft = run.status == 'draft' %}
+{% set draft = run.status == 'draft' %}{% set salary = run.kind == 'salary' %}{% set ic = 3 if salary else 4 %}
 <div class="topbar">
-  <div><h1>বেতন শিট — {{ month_label(run.year, run.month) }} {{ status_badge(run.status) }}</h1>
-    <div class="muted">{{ slips|length|bn }} জন কর্মচারী{% if run.note %} · {{ run.note }}{% endif %}</div></div>
+  <div><h1>{{ 'বেতন শিট' if salary else run.title }} — {{ month_label(run.year, run.month) }} {{ status_badge(run.status) }}</h1>
+    <div class="muted">{{ slips|length|bn }} জন কর্মচারী{% if fs.filter_label %} (ফিল্টার: {{ fs.filter_label }}){% endif %}{% if run.religion %} · শুধু {{ run.religion }} ধর্মাবলম্বী, মূল বেতনের {{ run.multiplier|pct }} গুণ{% endif %}{% if run.note %} · {{ run.note }}{% endif %}</div></div>
   <div class="actions">
-    <a class="btn primary" href="{{ url_for('payroll_excel', run_id=run.id) }}">Excel ডাউনলোড</a>
+    <a class="btn primary" href="{{ url_for('payroll_excel', run_id=run.id) }}{{ '?' ~ query if query }}">Excel ডাউনলোড{{ ' (ফিল্টারসহ)' if fs.filter_label }}</a>
     {% if draft %}
       <form class="inline" method="post" action="{{ url_for('payroll_recalc', run_id=run.id) }}" onsubmit="return confirm('সকলের হাতে করা সংশোধন মুছে বর্তমান তথ্য অনুযায়ী আবার হিসাব হবে। চালিয়ে যাবেন?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button>সবার পুনঃহিসাব</button></form>
       <form class="inline" method="post" action="{{ url_for('payroll_finalize', run_id=run.id) }}" onsubmit="return confirm('চূড়ান্ত করলে কর্মচারীরা বেতন বিবরণী দেখতে পাবেন এবং শিট লক হয়ে যাবে।')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="primary">চূড়ান্ত করুন</button></form>
@@ -19,11 +19,12 @@
 </div>
 
 <div class="grid g4" style="margin-bottom:18px">
-  <div class="stat"><div class="label">মোট বেতন</div><div class="value">৳ {{ totals.gross|taka }}</div></div>
+  <div class="stat"><div class="label">{{ 'মোট বেতন' if salary else 'মোট ভাতা' }}</div><div class="value">৳ {{ totals.gross|taka }}</div></div>
   <div class="stat"><div class="label">মোট কর্তন</div><div class="value">৳ {{ totals.total_deduction|taka }}</div></div>
   <div class="stat"><div class="label">নিট প্রদেয়</div><div class="value">৳ {{ totals.net|taka }}</div></div>
-  <div class="stat"><div class="label">আগের মাসের তুলনায়</div>
-    {% if prev_net %}{% set d = totals.net - prev_net %}<div class="value {{ 'up' if d >= 0 else 'down' }}">{{ '+' if d >= 0 }}{{ d|taka }}</div><div class="sub">আগের মাসে ৳ {{ prev_net|taka }}</div>
+  <div class="stat"><div class="label">{{ 'আগের মাসের তুলনায়' if salary else 'শিটের ধরন' }}</div>
+    {% if not salary %}<div class="value" style="font-size:1.1rem">{{ RUN_KINDS[run.kind] }}</div>
+    {% elif prev_net %}{% set d = totals.net - prev_net %}<div class="value {{ 'up' if d >= 0 else 'down' }}">{{ '+' if d >= 0 }}{{ d|taka }}</div><div class="sub">আগের মাসে ৳ {{ prev_net|taka }}</div>
     {% else %}<div class="value">—</div><div class="sub">আগের মাসের শিট নেই</div>{% endif %}</div>
 </div>
 
@@ -31,40 +32,57 @@
 <div class="flash warn">শিট তৈরির পর {{ missing|length|bn }} জন নতুন সক্রিয় কর্মচারী যুক্ত হয়েছেন ({{ missing|map(attribute='name_bn')|join(', ') }})। "সবার পুনঃহিসাব" চাপলে তারা শিটে আসবেন।</div>
 {% endif %}
 
-<form method="get" class="no-print" style="margin-bottom:10px"><input id="filter" placeholder="এই শিটে নাম/আইডি দিয়ে খুঁজুন…" style="max-width:340px" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#sheet tbody tr').forEach(function(r){r.style.display=r.textContent.toLowerCase().indexOf(q)>-1?'':'none'})"></form>
+<form method="get" class="card no-print filters">
+  <details {{ 'open' if fs.filter_label or fs.sort != 'code' or not fs.group }}>
+    <summary><b>ফিল্টার ও সাজানো</b> <span class="hint">— Excel ডাউনলোডেও এই ফিল্টার প্রযোজ্য হবে</span></summary>
+    <div class="grid g2" style="margin-top:10px">
+      <div><label>শাখা (একাধিক বাছাই করা যায়)</label>
+        <div class="chk-list">{% for d in fs.all_depts %}<label class="check"><input type="checkbox" name="dept" value="{{ d }}" {{ 'checked' if d in fs.sel_depts }}> {{ d }}</label>{% endfor %}</div></div>
+      <div><label>গ্রেড</label>
+        <div class="chk-list grades">{% for g in fs.all_grades %}<label class="check"><input type="checkbox" name="grade" value="{{ g }}" {{ 'checked' if g in fs.sel_grades }}> {{ g|bn }}</label>{% endfor %}</div>
+        <div class="inline-form" style="margin-top:12px">
+          <div class="field"><label>সাজানো</label><select name="sort">{% for v, t in [('code', 'আইডি অনুযায়ী'), ('grade', 'গ্রেড অনুযায়ী (১ম → ২০তম)'), ('name', 'নাম অনুযায়ী'), ('basic', 'মূল বেতন (বেশি → কম)'), ('net', 'নিট (বেশি → কম)')] %}<option value="{{ v }}" {{ 'selected' if fs.sort == v }}>{{ t }}</option>{% endfor %}</select></div>
+          <div class="field"><label>&nbsp;</label><label class="check"><input type="hidden" name="group" value="0"><input type="checkbox" name="group" value="1" {{ 'checked' if fs.group }}> শাখা অনুযায়ী ভাগ করে দেখান</label></div>
+        </div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:6px"><button class="primary" type="submit">প্রয়োগ করুন</button><a class="btn" href="{{ url_for('payroll_view', run_id=run.id) }}">ফিল্টার মুছুন</a></div>
+  </details>
+  <input id="filter" placeholder="এই শিটে নাম/আইডি দিয়ে খুঁজুন…" style="max-width:340px;margin-top:10px" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#sheet tbody tr').forEach(function(r){r.style.display=r.textContent.toLowerCase().indexOf(q)>-1?'':'none'})">
+</form>
 {% set acols = [] %}{% set ns = namespace(fixed=0) %}
 {% for k, label in [('basic','মূল বেতন'), ('house_rent','বাড়িভাড়া'), ('medical','চিকিৎসা'), ('education','শিক্ষা'), ('tiffin','টিফিন'), ('transport','যাতায়াত'), ('mobile','মোবাইল'), ('wash','ধোলাই'), ('special','মহার্ঘ'), ('pf_office','অফিস PF'), ('festival','উৎসব'), ('boishakhi','নববর্ষ')] %}
-  {% if k in ['basic','house_rent','medical'] or totals[k] %}{% set _ = acols.append((k, label)) %}{% endif %}
+  {% if (salary and k in ['basic','house_rent','medical']) or totals[k] %}{% set _ = acols.append((k, label)) %}{% endif %}
   {% set ns.fixed = ns.fixed + totals[k] %}
 {% endfor %}
 {% set other_a_total = totals.gross - ns.fixed %}
 <div class="table-wrap" style="max-height:70vh">
 <table id="sheet">
   <thead><tr>
-    <th>আইডি</th><th>নাম ও পদবি</th><th>গ্রেড</th>
+    <th>আইডি</th><th>নাম ও পদবি</th><th>গ্রেড</th>{% if not salary %}<th class="num">ভিত্তি মূল বেতন</th>{% endif %}
     {% for k, label in acols %}<th class="num">{{ label }}</th>{% endfor %}
     <th class="num">অন্যান্য ভাতা/বকেয়া</th><th class="num">মোট বেতন</th><th class="num">PF কর্তন</th><th class="num">অন্যান্য কর্তন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th><th></th>
   </tr></thead>
   <tbody>
   {% for dept, group, gt in groups %}
-  <tr class="dept"><td colspan="{{ 10 + acols|length }}">{{ dept }} <span class="small muted">({{ group|length|bn }} জন)</span></td></tr>
+  {% if dept is not none %}<tr class="dept"><td colspan="{{ ic + 7 + acols|length }}">{{ dept }} <span class="small muted">({{ group|length|bn }} জন)</span></td></tr>{% endif %}
   {% for s in group %}
     {% set oa = loads(s.other_allowance) | sum(attribute='amount') %}{% set od = loads(s.other_deduction) | sum(attribute='amount') %}
     <tr>
       <td>{{ s.code }}</td>
       <td><b>{{ s.name_bn }}</b>{% if s.employee_id in on_prl %} <span class="badge draft" title="জন্মতারিখ/PRL তারিখ অনুযায়ী অবসর-উত্তর ছুটি শুরু হয়েছে">PRL</span>{% endif %}<div class="small muted">{{ s.designation or '' }}</div></td>
-      <td>{{ s.grade|bn if s.grade }}</td>
+      <td>{{ s.grade|bn if s.grade }}</td>{% if not salary %}<td class="num">{{ s.ref_basic|taka }}</td>{% endif %}
       {% for k, label in acols %}<td class="num">{{ s[k]|taka }}</td>{% endfor %}
       <td class="num">{{ oa|taka }}</td><td class="num"><b>{{ s.gross|taka }}</b></td><td class="num">{{ (s.pf_fund + s.pf_own)|taka }}</td><td class="num">{{ (od + s.revenue_stamp)|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td>
       <td class="actions-cell">{% if draft %}<a class="btn sm" href="{{ url_for('payslip_edit', run_id=run.id, slip_id=s.id) }}">সংশোধন</a>{% endif %} <a class="btn sm" href="{{ url_for('payslip', slip_id=s.id) }}">বিবরণী</a></td>
     </tr>
   {% endfor %}
-  <tr class="sub"><td colspan="{{ 4 + acols|length }}">উপমোট — {{ dept }}</td><td class="num">{{ gt.gross|taka }}</td><td></td><td></td><td class="num">{{ gt.total_deduction|taka }}</td><td class="num">{{ gt.net|taka }}</td><td></td></tr>
-  <tr class="gap"><td colspan="{{ 10 + acols|length }}"></td></tr>
+  {% if dept is not none %}<tr class="sub"><td colspan="{{ ic + 1 + acols|length }}">উপমোট — {{ dept }}</td><td class="num">{{ gt.gross|taka }}</td><td></td><td></td><td class="num">{{ gt.total_deduction|taka }}</td><td class="num">{{ gt.net|taka }}</td><td></td></tr>
+  <tr class="gap"><td colspan="{{ ic + 7 + acols|length }}"></td></tr>{% endif %}
   {% endfor %}
   </tbody>
   <tfoot><tr>
-    <td colspan="3">সর্বমোট ({{ slips|length|bn }} জন)</td>
+    <td colspan="{{ ic }}">সর্বমোট ({{ slips|length|bn }} জন)</td>
     {% for k, label in acols %}<td class="num">{{ totals[k]|taka }}</td>{% endfor %}
     <td class="num">{{ other_a_total|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ (totals.pf_fund + totals.pf_own)|taka }}</td>
     <td class="num">{{ (totals.total_deduction - totals.pf_fund - totals.pf_own)|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td><td></td>

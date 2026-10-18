@@ -22,11 +22,11 @@
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
-  font: 15px/1.6 "Hind Siliguri", "Noto Sans Bengali", "Nirmala UI", "Vrinda", system-ui, sans-serif;
+  font: 15px/1.6 "Noto Sans Bengali", "Nirmala UI", "Vrinda", system-ui, sans-serif;
 }
 a { color: var(--brand); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1, h2, h3 { line-height: 1.3; margin: 0 0 .6em; }
+h1, h2, h3 { line-height: 1.3; margin: 0 0 .6em; font-family: "Noto Serif Bengali", "Noto Sans Bengali", serif; font-weight: 600; }
 h1 { font-size: 1.45rem; }
 h2 { font-size: 1.15rem; }
 h3 { font-size: 1rem; }
@@ -197,3 +197,8 @@ table.st th, table.st td { padding: 7px 8px; font-size: .9rem; }
 table.st th { position: static; }
 .statement.capturing { border: 0; }
 .danger-zone { border-color: #f0c2bd; }
+.filters summary { cursor: pointer; }
+.chk-list { display: flex; flex-wrap: wrap; gap: 4px 16px; max-height: 220px; overflow-y: auto; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfc; }
+.chk-list .check { font-size: .9rem; }
+.chk-list.grades .check { min-width: 52px; }
+.nowrap { white-space: nowrap; }
