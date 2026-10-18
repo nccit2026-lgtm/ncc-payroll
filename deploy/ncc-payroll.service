@@ -1,0 +1,15 @@
+# /etc/systemd/system/ncc-payroll.service
+[Unit]
+Description=NCC Payroll (gunicorn)
+After=network.target
+
+[Service]
+User=ncc
+WorkingDirectory=/opt/ncc-payroll
+Environment=BEHIND_PROXY=1
+Environment=SECURE_COOKIES=1
+ExecStart=/opt/ncc-payroll/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

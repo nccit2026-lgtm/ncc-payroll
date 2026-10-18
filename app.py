@@ -2,11 +2,13 @@ import json
 import math
 import os
 import secrets
-from datetime import date, datetime
+import time
+from datetime import date, datetime, timedelta
 from functools import wraps
 
 from flask import (Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for)
 from openpyxl import load_workbook
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import excel
@@ -16,6 +18,11 @@ from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, c
                      generate_run, insert_slip, regenerate_slip)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ভুল পাসওয়ার্ডের সীমা: একই IP + আইডি থেকে ১৫ মিনিটে ৫ বার
+FAILED_LOGINS = {}
+MAX_FAILED_LOGINS = 5
+LOCKOUT_SECONDS = 15 * 60
 
 
 def _secret_key(instance_dir):
@@ -37,7 +44,14 @@ def create_app(database=None):
         DATABASE=database or os.environ.get("DATABASE", os.path.join(instance_dir, "payroll.db")),
         SECRET_KEY=_secret_key(instance_dir),
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        # HTTPS এ চালালে SECURE_COOKIES=1 দিন
+        SESSION_COOKIE_SECURE=os.environ.get("SECURE_COOKIES") == "1",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
     )
+    if os.environ.get("BEHIND_PROXY") == "1":  # nginx / হোস্টিং প্রক্সির পেছনে
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
     app.teardown_appcontext(close_db)
     app.jinja_env.filters.update(bn=bn_num, taka=bn_taka, bndate=bn_date, pct=bn_pct)
     app.jinja_env.globals.update(MONTHS_BN=MONTHS_BN, month_label=month_label, FIELD_LABELS=FIELD_LABELS,
@@ -230,17 +244,26 @@ def register_routes(app):
     def login():
         if request.method == "POST":
             username = request.form.get("username", "").strip()
+            key = (request.remote_addr, username.lower())
+            now = time.time()
+            fails = [t for t in FAILED_LOGINS.get(key, []) if now - t < LOCKOUT_SECONDS]
+            if len(fails) >= MAX_FAILED_LOGINS:
+                flash("বারবার ভুল পাসওয়ার্ডের কারণে ১৫ মিনিটের জন্য লগইন বন্ধ। পরে চেষ্টা করুন।", "error")
+                return render_template("login.html"), 429
             user = get_db().execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
             if user and check_password_hash(user["password_hash"], request.form.get("password", "")):
+                FAILED_LOGINS.pop(key, None)
                 if user["employee_id"]:
                     emp = get_db().execute("SELECT status FROM employees WHERE id = ?", (user["employee_id"],)).fetchone()
                     if emp and emp["status"] != "active":
                         flash("এই অ্যাকাউন্টটি নিষ্ক্রিয়। প্রশাসনের সাথে যোগাযোগ করুন।", "error")
                         return render_template("login.html")
                 session.clear()
+                session.permanent = True
                 session["uid"] = user["id"]
                 nxt = request.args.get("next", "")
                 return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("index"))
+            FAILED_LOGINS[key] = fails + [now]
             flash("আইডি অথবা পাসওয়ার্ড সঠিক নয়।", "error")
         return render_template("login.html")
 

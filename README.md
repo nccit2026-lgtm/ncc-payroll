@@ -84,3 +84,18 @@ static/         CSS
 seed_demo.py    ডেমো ডাটা
 tests/          স্মোক টেস্ট
 ```
+
+## লাইভ করা (Production)
+
+| পরিবেশ ভেরিয়েবল | কাজ |
+|---|---|
+| `ADMIN_PASSWORD` | প্রথম অ্যাডমিনের পাসওয়ার্ড (না দিলে `admin123`; প্রথম লগইনে বদলাতে হবে) |
+| `SECRET_KEY` | সেশন সাইন করার গোপন কী (না দিলে `instance/secret_key` এ নিজে তৈরি হয়) |
+| `SECURE_COOKIES=1` | HTTPS এ চালালে অবশ্যই দিন |
+| `BEHIND_PROXY=1` | nginx বা হোস্টিং প্রক্সির পেছনে চালালে |
+| `DATABASE` | ডাটাবেস ফাইলের পথ (ডিফল্ট `instance/payroll.db`) |
+
+- **Docker:** `docker build -t ncc-payroll . && docker run -d -p 8000:8000 -v ncc-data:/app/instance -e SECURE_COOKIES=1 -e BEHIND_PROXY=1 ncc-payroll`
+- **Ubuntu সার্ভার:** `deploy/ncc-payroll.service` (systemd + gunicorn), `deploy/nginx.conf`, HTTPS এর জন্য certbot
+- **ব্যাকআপ:** `deploy/backup.sh` প্রতিদিন cron এ চালান
+- `instance/` ফোল্ডারটি অবশ্যই স্থায়ী (persistent) ডিস্কে রাখুন — এখানেই সব তথ্য থাকে।

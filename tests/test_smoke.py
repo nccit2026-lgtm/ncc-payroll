@@ -30,7 +30,10 @@ def test_full_flow():
     c = app.test_client()
 
     assert c.get("/admin").status_code == 302
-    r = post(c, "/login", {"username": "admin", "password": "admin123"}, follow_redirects=True)
+    r = post(c, "/login", {"username": "admin", "password": "admin123"})
+    assert r.headers["Location"].endswith("/")
+    assert c.get("/admin").headers["Location"].endswith("/password")  # প্রথম লগইনে পাসওয়ার্ড বদল বাধ্যতামূলক
+    r = post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"}, follow_redirects=True)
     assert "ড্যাশবোর্ড" in r.get_data(as_text=True)
 
     # নতুন কর্মচারী
@@ -127,6 +130,12 @@ def test_full_flow():
 
     # CSRF ছাড়া POST বাতিল
     assert c.post("/admin/increment").status_code == 400
+
+    # ৫ বার ভুল পাসওয়ার্ডের পর লগইন বন্ধ, সঠিক পাসওয়ার্ডেও
+    bad = app.test_client()
+    for _ in range(5):
+        assert post(bad, "/login", {"username": "admin", "password": "wrong"}).status_code == 200
+    assert post(bad, "/login", {"username": "admin", "password": "Admin#2026"}).status_code == 429
 
 
 if __name__ == "__main__":

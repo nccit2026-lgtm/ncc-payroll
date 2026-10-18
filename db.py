@@ -63,7 +63,7 @@ def db_path():
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(db_path())
+        g.db = sqlite3.connect(db_path(), timeout=15)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
@@ -77,6 +77,7 @@ def close_db(_exc=None):
 
 def init_db():
     conn = get_db()
+    conn.execute("PRAGMA journal_mode=WAL")  # একাধিক ব্যবহারকারী একসাথে কাজ করলে ভালো
     with open(os.path.join(BASE_DIR, "schema.sql"), encoding="utf-8") as f:
         conn.executescript(f.read())
 
@@ -91,9 +92,10 @@ def init_db():
             (key, json.dumps(value, ensure_ascii=False)),
         )
     if not conn.execute("SELECT 1 FROM users WHERE role = 'admin'").fetchone():
+        # প্রথম অ্যাডমিন: ADMIN_PASSWORD env থাকলে সেটি, নইলে admin123; প্রথম লগইনে পরিবর্তন বাধ্যতামূলক
         conn.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')",
-            ("admin", generate_password_hash("admin123")),
+            "INSERT INTO users (username, password_hash, role, must_change) VALUES (?, ?, 'admin', 1)",
+            ("admin", generate_password_hash(os.environ.get("ADMIN_PASSWORD", "admin123"))),
         )
     conn.commit()
 
