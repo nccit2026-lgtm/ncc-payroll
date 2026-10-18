@@ -183,3 +183,17 @@ table.ledger td.f { color: var(--muted); font-size: .85rem; }
 details > summary { cursor: pointer; list-style: revert; }
 details > summary h3 { margin: 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.tabs a { padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.tabs a.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.tabs a:hover { text-decoration: none; }
+#sheet tr.dept td { background: #f3f7f5; color: var(--brand); font-weight: 700; position: static; }
+#sheet tr.sub td { background: var(--brand-soft); font-weight: 600; }
+#sheet tr.gap td { border: 0; padding: 4px; background: #fff; }
+.ym { display: flex; gap: 6px; }
+.ym select { width: auto; }
+.statement { max-width: 900px; }
+table.st th, table.st td { padding: 7px 8px; font-size: .9rem; }
+table.st th { position: static; }
+.statement.capturing { border: 0; }
+.danger-zone { border-color: #f0c2bd; }

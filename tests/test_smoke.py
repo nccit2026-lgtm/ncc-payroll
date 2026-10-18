@@ -186,7 +186,80 @@ def test_old_database_is_upgraded():
         assert e["inc_2026"] == 1 and e["tiffin"] == 1
 
 
+def test_ids_separation_sheet_statement():
+    import app as app_module
+    app_module.FAILED_LOGINS.clear()  # আগের টেস্টের ইচ্ছাকৃত লগইন-লক মুছে ফেলা
+    app = create_app(os.path.join(tempfile.mkdtemp(), "n.db"))
+    c = app.test_client()
+    from db import get_db
+    post(c, "/login", {"username": "admin", "password": "admin123"})
+    post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"})
+    post(c, "/admin/payscale", {"office_name": "নারায়ণগঞ্জ সিটি কর্পোরেশন", "office_address": "নগর ভবন",
+                                "accounts_officer_name": "মোঃ করিম", "accounts_officer_designation": "হিসাবরক্ষণ কর্মকর্তা",
+                                "festival_pct": "100", "boishakhi_pct": "20"})
+    # আইডি নিজে তৈরি: খালি আইডি → NCC-0001, NCC-0002 ...; NCC-0010 থাকলে পরেরটি NCC-0011
+    assert 'value="NCC-0001"' in c.get("/admin/employees/new").get_data(as_text=True)
+    base = {"grade": "16", "basic": "10260", "inc_2026": "1", "inc_2027": "1", "tiffin": "1", "transport": "1"}
+    for name, dept in [("ক", "সাধারণ শাখা"), ("খ", "হিসাব বিভাগ"), ("গ", "সাধারণ শাখা")]:
+        post(c, "/admin/employees/new", {**base, "code": "", "name_bn": name, "department": dept})
+    post(c, "/admin/employees/new", {**base, "code": "NCC-0010", "name_bn": "ঘ", "department": "হিসাব বিভাগ"})
+    post(c, "/admin/employees/new", {**base, "code": "", "name_bn": "ঙ", "department": "সাধারণ শাখা"})
+    with app.app_context():
+        codes = [r[0] for r in get_db().execute("SELECT code FROM employees ORDER BY id")]
+    assert codes == ["NCC-0001", "NCC-0002", "NCC-0003", "NCC-0010", "NCC-0011"]
+
+    # শাখাভিত্তিক Excel: শাখার নাম, উপমোট, সর্বমোট, সইয়ের ঘর
+    post(c, "/admin/payroll/new", {"year": "2026", "month": "11"})
+    ws = load_workbook(io.BytesIO(c.get("/admin/payroll/1/excel").data))["বেতন শিট"]
+    col_a = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1)]
+    col_c = [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)]
+    assert "সাধারণ শাখা  (৩ জন)" in col_a and "হিসাব বিভাগ  (২ জন)" in col_a
+    assert col_a.index("সাধারণ শাখা  (৩ জন)") < col_a.index("হিসাব বিভাগ  (২ জন)")
+    assert col_c.count("উপমোট") == 2 and "সর্বমোট (৫ জন)" in col_c
+    assert any(ws.cell(r, col).value == "মোঃ করিম" for r in range(1, ws.max_row + 1) for col in range(1, ws.max_column + 1))
+    html = c.get("/admin/payroll/1").get_data(as_text=True)
+    assert "উপমোট — সাধারণ শাখা" in html
+
+    # নিষ্ক্রিয় করা ও স্থায়ীভাবে মোছা
+    post(c, "/admin/employees/1/deactivate", {"reason": "অবসর", "date": "2026-12-31"})
+    with app.app_context():
+        e = get_db().execute("SELECT * FROM employees WHERE id = 1").fetchone()
+        assert (e["status"], e["separation_reason"], e["separation_date"]) == ("inactive", "অবসর", "2026-12-31")
+    html = c.get("/admin/employees?status=inactive").get_data(as_text=True)
+    assert "অবসর" in html and "নিষ্ক্রিয় (১)" in html
+    post(c, "/admin/employees/1/delete")  # বেতন শিটে নাম আছে → মোছা যাবে না
+    post(c, "/admin/payroll/new", {"year": "2026", "month": "12"})
+    with app.app_context():
+        assert get_db().execute("SELECT 1 FROM employees WHERE id = 1").fetchone()
+        assert not get_db().execute("SELECT 1 FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                                    "WHERE r.month = 12 AND p.employee_id = 1").fetchone()
+    ex = app.test_client()
+    assert "নিষ্ক্রিয়" in post(ex, "/login", {"username": "NCC-0001", "password": "NCC-0001"}).get_data(as_text=True)
+    post(c, "/admin/employees/1/activate")
+    post(c, "/admin/employees/new", {**base, "code": "", "name_bn": "ভুল", "department": "x"})
+    with app.app_context():
+        wrong = get_db().execute("SELECT id FROM employees WHERE name_bn = 'ভুল'").fetchone()["id"]
+    post(c, f"/admin/employees/{wrong}/delete")
+    with app.app_context():
+        assert get_db().execute("SELECT status FROM employees WHERE id = 1").fetchone()[0] == "active"
+        assert not get_db().execute("SELECT 1 FROM employees WHERE id = ?", (wrong,)).fetchone()
+        assert not get_db().execute("SELECT 1 FROM users WHERE username = 'NCC-0012'").fetchone()
+
+    # ব্যক্তির বেতন বিবরণী: মাস থেকে মাস; কর্মচারী শুধু চূড়ান্ত ও নিজেরটা
+    html = c.get("/statement/2?from=2026-11&to=2026-11").get_data(as_text=True)
+    assert "নভেম্বর ২০২৬ — নভেম্বর ২০২৬" in html and "মোঃ করিম" in html and "মোট (১ মাস)" in html
+    assert "মোট (২ মাস)" in c.get("/statement/2?from=2026-1&to=2026-12").get_data(as_text=True)
+    me = app.test_client()
+    post(me, "/login", {"username": "NCC-0002", "password": "NCC-0002"})
+    post(me, "/password", {"old": "NCC-0002", "new": "pass1234", "confirm": "pass1234"})
+    assert "কোনো চূড়ান্ত বেতনের রেকর্ড নেই" in me.get("/me/statement").get_data(as_text=True)
+    post(c, "/admin/payroll/1/finalize")
+    assert "মোট (১ মাস)" in me.get("/me/statement").get_data(as_text=True)
+    assert me.get("/statement/3").status_code == 403
+
+
 if __name__ == "__main__":
     test_full_flow()
+    test_ids_separation_sheet_statement()
     test_old_database_is_upgraded()
     print("সব টেস্ট সফল")

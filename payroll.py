@@ -124,3 +124,11 @@ def regenerate_slip(run, slip_row):
     conn.execute("DELETE FROM payslips WHERE id = ?", (slip_row["id"],))
     insert_slip(run["id"], emp, s)
     return True
+
+
+def group_by_department(slips):
+    """শাখা অনুযায়ী ভাগ — প্রথমবার যে ক্রমে শাখা আসে সেই ক্রমে (আইডি ক্রম অনুযায়ী)।"""
+    groups = {}
+    for s in slips:
+        groups.setdefault(s["department"] or "শাখা উল্লেখ নেই", []).append(s)
+    return list(groups.items())

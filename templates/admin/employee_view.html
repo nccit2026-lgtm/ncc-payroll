@@ -1,15 +1,41 @@
 {% extends "base.html" %}
-{% block title %}{{ emp.name_bn }}{% endblock %}
+{% block title %}{{ emp.name_bn }}
+{% if emp.status == 'active' %}
+<div class="card danger-zone">
+  <h2>কর্মচারী মুছুন / নিষ্ক্রিয় করুন</h2>
+  <p class="hint" style="margin-top:-6px">অবসর, পদত্যাগ, বদলি ইত্যাদিতে নিষ্ক্রিয় তালিকায় সরান — পুরনো বেতনের রেকর্ড থেকে যাবে, পরে চাইলে আবার সক্রিয় করা যাবে।</p>
+  <form method="post" action="{{ url_for('employee_deactivate', emp_id=emp.id) }}" class="inline-form" onsubmit="return confirm('{{ emp.name_bn }} কে নিষ্ক্রিয় তালিকায় সরাবেন?')">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field"><label>কারণ</label><select name="reason">{% for r in ['অবসর', 'অবসর-উত্তর ছুটি (PRL)', 'পদত্যাগ', 'বদলি', 'চাকরিচ্যুত', 'মৃত্যু', 'অন্যান্য'] %}<option>{{ r }}</option>{% endfor %}</select></div>
+    <div class="field"><label>তারিখ</label><input type="date" name="date" value="{{ today.isoformat() }}"></div>
+    <button class="danger" type="submit">নিষ্ক্রিয় তালিকায় সরান</button>
+  </form>
+</div>
+{% endif %}
+{% if not slips %}
+<form method="post" action="{{ url_for('employee_delete', emp_id=emp.id) }}" onsubmit="return confirm('স্থায়ীভাবে মুছে ফেলবেন? এটি ফেরত আনা যাবে না।')" style="margin-top:8px">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger sm" type="submit">ভুল করে যুক্ত হয়েছে — স্থায়ীভাবে মুছুন</button>
+  <span class="hint">কোনো বেতন শিটে নাম না থাকলেই শুধু স্থায়ীভাবে মোছা যায়।</span>
+</form>
+{% endif %}
+{% endblock %}
 {% block content %}
 <div class="topbar">
   <div><h1>{{ emp.name_bn }} {% if emp.status != 'active' %}<span class="badge off">নিষ্ক্রিয়</span>{% endif %}</h1>
     <div class="muted">{{ emp.designation or '' }}{% if emp.department %} · {{ emp.department }}{% endif %} · আইডি {{ emp.code }}</div></div>
   <div class="actions">
     <a class="btn primary" href="{{ url_for('employee_edit', emp_id=emp.id) }}">তথ্য ও বেতন সম্পাদনা</a>
+    <a class="btn" href="{{ url_for('statement', emp_id=emp.id) }}">বেতন বিবরণী (PDF)</a>
     <a class="btn" href="{{ url_for('employee_history_xlsx', emp_id=emp.id) }}">বেতন ইতিহাস (Excel)</a>
   </div>
 </div>
 
+{% if emp.status != 'active' %}
+<div class="flash warn" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+  <span>নিষ্ক্রিয়: <b>{{ emp.separation_reason or '—' }}</b>{% if emp.separation_date %}, {{ emp.separation_date|bndate }} থেকে{% endif %}। বেতন শিটে আসবেন না, লগইন বন্ধ।</span>
+  <form class="inline" method="post" action="{{ url_for('employee_activate', emp_id=emp.id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sm">আবার সক্রিয় করুন</button></form>
+</div>
+{% endif %}
 {% include "_profile.html" %}
 {% include "_fixation.html" %}
 
@@ -57,4 +83,23 @@
 <h2>বেতন ইতিহাস</h2>
 {% set show_status = true %}
 {% include "_history.html" %}
+
+{% if emp.status == 'active' %}
+<div class="card danger-zone">
+  <h2>কর্মচারী মুছুন / নিষ্ক্রিয় করুন</h2>
+  <p class="hint" style="margin-top:-6px">অবসর, পদত্যাগ, বদলি ইত্যাদিতে নিষ্ক্রিয় তালিকায় সরান — পুরনো বেতনের রেকর্ড থেকে যাবে, পরে চাইলে আবার সক্রিয় করা যাবে।</p>
+  <form method="post" action="{{ url_for('employee_deactivate', emp_id=emp.id) }}" class="inline-form" onsubmit="return confirm('{{ emp.name_bn }} কে নিষ্ক্রিয় তালিকায় সরাবেন?')">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="field"><label>কারণ</label><select name="reason">{% for r in ['অবসর', 'অবসর-উত্তর ছুটি (PRL)', 'পদত্যাগ', 'বদলি', 'চাকরিচ্যুত', 'মৃত্যু', 'অন্যান্য'] %}<option>{{ r }}</option>{% endfor %}</select></div>
+    <div class="field"><label>তারিখ</label><input type="date" name="date" value="{{ today.isoformat() }}"></div>
+    <button class="danger" type="submit">নিষ্ক্রিয় তালিকায় সরান</button>
+  </form>
+</div>
+{% endif %}
+{% if not slips %}
+<form method="post" action="{{ url_for('employee_delete', emp_id=emp.id) }}" onsubmit="return confirm('স্থায়ীভাবে মুছে ফেলবেন? এটি ফেরত আনা যাবে না।')" style="margin-top:8px">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger sm" type="submit">ভুল করে যুক্ত হয়েছে — স্থায়ীভাবে মুছুন</button>
+  <span class="hint">কোনো বেতন শিটে নাম না থাকলেই শুধু স্থায়ীভাবে মোছা যায়।</span>
+</form>
+{% endif %}
 {% endblock %}

@@ -4,7 +4,8 @@
 {% block content %}
 <div class="topbar">
   <div><h1>স্বাগতম, {{ emp.name_bn }}</h1><div class="muted">{{ emp.designation or '' }}{% if emp.department %} · {{ emp.department }}{% endif %} · আইডি {{ emp.code }}</div></div>
-  <a class="btn" href="{{ url_for('my_history_xlsx') }}">বেতন ইতিহাস (Excel)</a>
+  <div class="actions"><a class="btn primary" href="{{ url_for('my_statement') }}">বেতন বিবরণী (PDF)</a>
+  <a class="btn" href="{{ url_for('my_history_xlsx') }}">বেতন ইতিহাস (Excel)</a></div>
 </div>
 <div class="grid g3" style="margin-bottom:18px">
   <div class="stat"><div class="label">সর্বশেষ নিট বেতন{% if latest %} ({{ month_label(latest.year, latest.month) }}){% endif %}</div><div class="value">৳ {{ (latest.net if latest else 0)|taka }}</div>

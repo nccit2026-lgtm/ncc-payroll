@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 import secrets
 import time
 from datetime import date, datetime, timedelta
@@ -12,11 +13,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import excel
-from bn import MONTHS_BN, bn_date, bn_num, bn_pct, bn_taka, month_label
+from bn import MONTHS_BN, bn_date, bn_num, bn_pct, bn_taka, month_label  # noqa: F401
 from db import close_db, get_db, get_settings, init_db, save_setting
 import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
-                     generate_run, insert_slip, regenerate_slip)
+                     generate_run, group_by_department, insert_slip, regenerate_slip)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -193,6 +194,16 @@ def employee_from_form(form):
     data["new_basic_override"] = optional_num(form.get("new_basic_override"))
     data.update({f: optional_num(form.get(f)) for f in OVERRIDE_FIELDS})
     return data
+
+
+SEPARATION_REASONS = ["অবসর", "অবসর-উত্তর ছুটি (PRL)", "পদত্যাগ", "বদলি", "চাকরিচ্যুত", "মৃত্যু", "অন্যান্য"]
+
+
+def next_code():
+    """পরের কর্মচারী আইডি: সবচেয়ে বড় NCC-নম্বর + ১।"""
+    nums = [int(m.group(1)) for (code,) in get_db().execute("SELECT code FROM employees")
+            if (m := re.fullmatch(r"NCC-(\d+)", code or ""))]
+    return f"NCC-{(max(nums) + 1) if nums else 1:04d}"
 
 
 def save_employee(data, emp_id=None):
@@ -384,7 +395,9 @@ def register_routes(app):
         rows = get_db().execute(sql + " ORDER BY code", args).fetchall()
         depts = [r[0] for r in get_db().execute(
             "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
-        return render_template("admin/employees.html", rows=rows, q=q, dept=dept, status=status, depts=depts)
+        counts = dict(get_db().execute("SELECT status, COUNT(*) FROM employees GROUP BY status").fetchall())
+        return render_template("admin/employees.html", rows=rows, q=q, dept=dept, status=status, depts=depts,
+                               counts=counts, next_code=next_code())
 
     def employee_form_context(emp=None):
         conn = get_db()
@@ -392,17 +405,18 @@ def register_routes(app):
             "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
         desigs = [r[0] for r in conn.execute(
             "SELECT DISTINCT designation FROM employees WHERE designation IS NOT NULL ORDER BY designation")]
-        return {"emp": emp, "scales": payscale.OLD, "depts": depts, "desigs": desigs}
+        return {"emp": emp, "scales": payscale.OLD, "depts": depts, "desigs": desigs, "new_code": next_code()}
 
     @app.route("/admin/employees/new", methods=["GET", "POST"])
     @admin_required
     def employee_new():
         if request.method == "POST":
             data = employee_from_form(request.form)
-            if not data["code"] or not data["name_bn"]:
-                flash("আইডি ও নাম অবশ্যই দিতে হবে।", "error")
+            data["code"] = data["code"] or next_code()
+            if not data["name_bn"]:
+                flash("নাম অবশ্যই দিতে হবে।", "error")
             elif get_db().execute("SELECT 1 FROM users WHERE username = ?", (data["code"],)).fetchone():
-                flash("এই আইডি আগে থেকেই আছে।", "error")
+                flash(f"আইডি {data['code']} আগে থেকেই আছে। পরের খালি আইডি: {next_code()}", "error")
             else:
                 emp_id = save_employee(data)
                 get_db().commit()
@@ -476,6 +490,45 @@ def register_routes(app):
         flash(f"পাসওয়ার্ড রিসেট হয়েছে। নতুন প্রাথমিক পাসওয়ার্ড: {emp['code']}", "ok")
         return redirect(url_for("employee_view", emp_id=emp_id))
 
+    @app.route("/admin/employees/<int:emp_id>/deactivate", methods=["POST"])
+    @admin_required
+    def employee_deactivate(emp_id):
+        """'মুছুন' = নিষ্ক্রিয় তালিকায় সরানো (অবসর/পদত্যাগ ইত্যাদি); বেতনের পুরনো রেকর্ড থেকে যায়।"""
+        emp = get_db().execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        reason = request.form.get("reason") or "অন্যান্য"
+        when = clean_date(request.form.get("date")) or date.today().isoformat()
+        get_db().execute("UPDATE employees SET status = 'inactive', separation_reason = ?, separation_date = ? WHERE id = ?",
+                         (reason, when, emp_id))
+        get_db().commit()
+        flash(f"{emp['name_bn']} নিষ্ক্রিয় তালিকায় সরানো হয়েছে ({reason}, {bn_date(when)})। পরের বেতন শিটে আসবেন না, "
+              "লগইনও করতে পারবেন না; পুরনো বেতনের রেকর্ড থাকবে।", "ok")
+        return redirect(url_for("employees", status="inactive"))
+
+    @app.route("/admin/employees/<int:emp_id>/activate", methods=["POST"])
+    @admin_required
+    def employee_activate(emp_id):
+        emp = get_db().execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        get_db().execute("UPDATE employees SET status = 'active', separation_reason = NULL, separation_date = NULL "
+                         "WHERE id = ?", (emp_id,))
+        get_db().commit()
+        flash(f"{emp['name_bn']} আবার সক্রিয় করা হয়েছে।", "ok")
+        return redirect(url_for("employee_view", emp_id=emp_id))
+
+    @app.route("/admin/employees/<int:emp_id>/delete", methods=["POST"])
+    @admin_required
+    def employee_delete(emp_id):
+        """স্থায়ীভাবে মোছা — শুধু ভুল করে যুক্ত কর্মচারীর জন্য, যার কোনো বেতন শিটে নাম নেই।"""
+        conn = get_db()
+        emp = conn.execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        if conn.execute("SELECT 1 FROM payslips WHERE employee_id = ?", (emp_id,)).fetchone():
+            flash("এই কর্মচারীর বেতনের রেকর্ড আছে, তাই স্থায়ীভাবে মোছা যাবে না। নিষ্ক্রিয় করুন।", "error")
+            return redirect(url_for("employee_view", emp_id=emp_id))
+        conn.execute("DELETE FROM users WHERE employee_id = ?", (emp_id,))
+        conn.execute("DELETE FROM employees WHERE id = ?", (emp_id,))
+        conn.commit()
+        flash(f"{emp['name_bn']} ({emp['code']}) স্থায়ীভাবে মুছে ফেলা হয়েছে।", "ok")
+        return redirect(url_for("employees"))
+
     @app.route("/admin/employees/<int:emp_id>/history.xlsx")
     @admin_required
     def employee_history_xlsx(emp_id):
@@ -509,8 +562,8 @@ def register_routes(app):
                 return redirect(request.url)
             header_to_field = {h.rstrip("*").strip(): fld for fld, h in excel.EMPLOYEE_COLUMNS}
             header = [header_to_field.get(str(c.value or "").rstrip("*").strip()) for c in ws[1]]
-            if "code" not in header or "name_bn" not in header:
-                flash("প্রথম সারিতে টেমপ্লেটের শিরোনাম (আইডি, নাম) পাওয়া যায়নি।", "error")
+            if "name_bn" not in header:
+                flash("প্রথম সারিতে টেমপ্লেটের শিরোনাম (নাম) পাওয়া যায়নি।", "error")
                 return redirect(request.url)
             conn = get_db()
             added = updated = 0
@@ -519,10 +572,11 @@ def register_routes(app):
                 raw = {fld: v for fld, v in zip(header, row) if fld}
                 if not any(v not in (None, "") for v in raw.values()):
                     continue
-                code = str(raw.get("code") or "").strip()
-                if not code or not raw.get("name_bn"):
-                    errors.append(f"সারি {bn_num(r_idx)}: আইডি/নাম নেই")
+                if not raw.get("name_bn"):
+                    errors.append(f"সারি {bn_num(r_idx)}: নাম নেই")
                     continue
+                code = str(raw.get("code") or "").strip() or next_code()
+                raw["code"] = code
                 existing = conn.execute("SELECT * FROM employees WHERE code = ?", (code,)).fetchone()
                 form = dict(existing) if existing else dict(IMPORT_DEFAULTS)
                 form.update({k: v for k, v in raw.items() if v not in (None, "")})
@@ -564,7 +618,7 @@ def register_routes(app):
     @admin_required
     def payscale_page():
         if request.method == "POST":
-            for key in ["office_name", "office_address"]:
+            for key in ["office_name", "office_address", "accounts_officer_name", "accounts_officer_designation"]:
                 save_setting(key, request.form.get(key, "").strip())
             for key in ["festival_pct", "boishakhi_pct"]:
                 save_setting(key, to_float(request.form.get(key)))
@@ -618,7 +672,9 @@ def register_routes(app):
         prev = get_db().execute(
             "SELECT COALESCE(SUM(p.net),0) AS net FROM payroll_runs r JOIN payslips p ON p.run_id = r.id "
             "WHERE r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
-        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing,
+        groups = [(d, g, {f: round(sum(s[f] for s in g), 2) for f in ["gross", "total_deduction", "net"]})
+                  for d, g in group_by_department(slips)]
+        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing, groups=groups,
                                prev_net=prev["net"] if prev else 0, on_prl=on_prl)
 
     @app.route("/admin/payroll/<int:run_id>/excel")
@@ -798,6 +854,38 @@ def register_routes(app):
         emp = my_employee()
         slips = list(reversed(employee_slips(emp["id"], final_only=True)))
         return xlsx_response(excel.employee_history_workbook(emp, slips, get_settings()), f"salary-{emp['code']}.xlsx")
+
+    @app.route("/me/statement")
+    @login_required
+    def my_statement():
+        return statement(my_employee()["id"])
+
+    @app.route("/statement/<int:emp_id>")
+    @login_required
+    def statement(emp_id):
+        """ব্যক্তির বেতন বিবরণী: নির্দিষ্ট মাস থেকে মাস পর্যন্ত, শেষে হিসাবরক্ষণ কর্মকর্তার সইয়ের ঘর; PDF ডাউনলোড।"""
+        user = current_user()
+        if user["role"] != "admin" and user["employee_id"] != emp_id:
+            abort(403)
+        emp = get_db().execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        all_slips = list(reversed(employee_slips(emp_id, final_only=user["role"] != "admin")))
+        months = [(s["year"], s["month"]) for s in all_slips]
+
+        def ym(arg, default):
+            m = re.fullmatch(r"(\d{4})-(\d{1,2})", request.args.get(arg, ""))
+            return (int(m.group(1)), int(m.group(2))) if m else default
+        start = ym("from", months[0] if months else (date.today().year, 1))
+        end = ym("to", months[-1] if months else (date.today().year, date.today().month))
+        if start > end:
+            start, end = end, start
+        slips = [s for s in all_slips if start <= (s["year"], s["month"]) <= end]
+        totals = {f: round(sum(s[f] for s in slips), 2)
+                  for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net"]}
+        totals["other_a"] = round(sum(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])) for s in slips), 2)
+        totals["other_d"] = round(sum(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])) for s in slips), 2)
+        years = sorted({y for y, _ in months} | {date.today().year})
+        return render_template("statement.html", emp=emp, slips=slips, totals=totals, start=start, end=end,
+                               years=years, today=date.today())
 
     @app.route("/payslip/<int:slip_id>")
     @login_required

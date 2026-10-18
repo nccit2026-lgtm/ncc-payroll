@@ -11,6 +11,8 @@ DEFAULT_SETTINGS = {
     "office_name": "নারায়ণগঞ্জ সিটি কর্পোরেশন",
     "office_address": "নগর ভবন, নারায়ণগঞ্জ",
     "festival_pct": 100,
+    "accounts_officer_name": "",
+    "accounts_officer_designation": "হিসাবরক্ষণ কর্মকর্তা",
     "boishakhi_pct": 20,
 }
 
@@ -21,6 +23,7 @@ MIGRATIONS = {
         "new_basic_override": "REAL", "pf": "INTEGER NOT NULL DEFAULT 0",
         "special_rate": "TEXT NOT NULL DEFAULT 'auto'", "tiffin": "INTEGER NOT NULL DEFAULT 1",
         "transport": "INTEGER NOT NULL DEFAULT 1", "wash": "INTEGER NOT NULL DEFAULT 0",
+        "separation_reason": "TEXT", "separation_date": "TEXT",
     },
     "payslips": {
         "mobile": "REAL NOT NULL DEFAULT 0", "wash": "REAL NOT NULL DEFAULT 0", "special": "REAL NOT NULL DEFAULT 0",

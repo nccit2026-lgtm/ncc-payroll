@@ -36,6 +36,6 @@
     </table>
   </div>
   <div class="net"><span>নিট প্রদেয়</span><span>৳ {{ slip.net|taka }}</span></div>
-  <div class="sign"><div>প্রস্তুতকারী</div><div>হিসাবরক্ষণ কর্মকর্তা</div></div>
+  <div class="sign"><div>প্রস্তুতকারী</div><div>{% if settings.accounts_officer_name %}<b>{{ settings.accounts_officer_name }}</b><br>{% endif %}{{ settings.accounts_officer_designation or 'হিসাবরক্ষণ কর্মকর্তা' }}<br>{{ settings.office_name }}</div></div>
 </div>
 {% endblock %}

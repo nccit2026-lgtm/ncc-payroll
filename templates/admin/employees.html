@@ -2,12 +2,17 @@
 {% block title %}কর্মচারী{% endblock %}
 {% block content %}
 <div class="topbar">
-  <div><h1>কর্মচারী তালিকা</h1><div class="muted">{{ rows|length|bn }} জন পাওয়া গেছে</div></div>
+  <div><h1>{{ 'নিষ্ক্রিয় কর্মচারী (অবসর/পদত্যাগ ইত্যাদি)' if status == 'inactive' else 'কর্মচারী তালিকা' }}</h1><div class="muted">{{ rows|length|bn }} জন পাওয়া গেছে · পরের নতুন আইডি: {{ next_code }}</div></div>
   <div class="actions">
     <a class="btn primary" href="{{ url_for('employee_new') }}">+ নতুন কর্মচারী</a>
     <a class="btn" href="{{ url_for('employees_import') }}">Excel থেকে ইমপোর্ট</a>
     <a class="btn" href="{{ url_for('employees_export') }}">Excel এ এক্সপোর্ট</a>
   </div>
+</div>
+<div class="tabs">
+  <a href="{{ url_for('employees', status='active') }}" class="{{ 'on' if status == 'active' }}">সক্রিয় ({{ (counts.active or 0)|bn }})</a>
+  <a href="{{ url_for('employees', status='inactive') }}" class="{{ 'on' if status == 'inactive' }}">নিষ্ক্রিয় ({{ (counts.inactive or 0)|bn }})</a>
+  <a href="{{ url_for('employees', status='') }}" class="{{ 'on' if status == '' }}">সবাই</a>
 </div>
 <form class="card inline-form" method="get">
   <div class="field" style="flex:2;min-width:200px"><label>খুঁজুন</label><input name="q" value="{{ q }}" placeholder="নাম, আইডি, পদবি বা মোবাইল"></div>
@@ -30,14 +35,15 @@
 {% endif %}
 <div class="table-wrap">
 <table>
-  <thead><tr><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>মোবাইল</th><th></th></tr></thead>
+  <thead><tr><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>{{ 'কারণ ও তারিখ' if status != 'active' else 'মোবাইল' }}</th><th></th></tr></thead>
   <tbody>
   {% for e in rows %}
     <tr>
       <td>{{ e.code }}</td>
       <td><a href="{{ url_for('employee_view', emp_id=e.id) }}"><b>{{ e.name_bn }}</b></a>{% if e.name_en %}<div class="small muted">{{ e.name_en }}</div>{% endif %}</td>
       <td>{{ e.designation or '—' }}</td><td>{{ e.department or '—' }}</td>
-      <td>{{ e.grade|bn if e.grade else '—' }}</td><td class="num">{{ e.basic|taka }}</td><td>{{ e.mobile|bn }}</td>
+      <td>{{ e.grade|bn if e.grade else '—' }}</td><td class="num">{{ e.basic|taka }}</td>
+      <td>{% if e.status == 'inactive' %}<span class="badge off">{{ e.separation_reason or 'নিষ্ক্রিয়' }}</span> <span class="small">{{ e.separation_date|bndate }}</span>{% else %}{{ e.mobile|bn }}{% endif %}</td>
       <td class="actions-cell"><a class="btn sm" href="{{ url_for('employee_edit', emp_id=e.id) }}">সম্পাদনা</a></td>
     </tr>
   {% else %}

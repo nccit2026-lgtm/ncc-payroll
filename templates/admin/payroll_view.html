@@ -41,25 +41,30 @@
 <div class="table-wrap" style="max-height:70vh">
 <table id="sheet">
   <thead><tr>
-    <th>আইডি</th><th>নাম ও পদবি</th><th>শাখা</th><th>গ্রেড</th>
+    <th>আইডি</th><th>নাম ও পদবি</th><th>গ্রেড</th>
     {% for k, label in acols %}<th class="num">{{ label }}</th>{% endfor %}
     <th class="num">অন্যান্য ভাতা/বকেয়া</th><th class="num">মোট বেতন</th><th class="num">PF কর্তন</th><th class="num">অন্যান্য কর্তন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th><th></th>
   </tr></thead>
   <tbody>
-  {% for s in slips %}
+  {% for dept, group, gt in groups %}
+  <tr class="dept"><td colspan="{{ 10 + acols|length }}">{{ dept }} <span class="small muted">({{ group|length|bn }} জন)</span></td></tr>
+  {% for s in group %}
     {% set oa = loads(s.other_allowance) | sum(attribute='amount') %}{% set od = loads(s.other_deduction) | sum(attribute='amount') %}
     <tr>
       <td>{{ s.code }}</td>
       <td><b>{{ s.name_bn }}</b>{% if s.employee_id in on_prl %} <span class="badge draft" title="জন্মতারিখ/PRL তারিখ অনুযায়ী অবসর-উত্তর ছুটি শুরু হয়েছে">PRL</span>{% endif %}<div class="small muted">{{ s.designation or '' }}</div></td>
-      <td class="small">{{ s.department or '' }}</td><td>{{ s.grade|bn if s.grade }}</td>
+      <td>{{ s.grade|bn if s.grade }}</td>
       {% for k, label in acols %}<td class="num">{{ s[k]|taka }}</td>{% endfor %}
       <td class="num">{{ oa|taka }}</td><td class="num"><b>{{ s.gross|taka }}</b></td><td class="num">{{ (s.pf_fund + s.pf_own)|taka }}</td><td class="num">{{ (od + s.revenue_stamp)|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td>
       <td class="actions-cell">{% if draft %}<a class="btn sm" href="{{ url_for('payslip_edit', run_id=run.id, slip_id=s.id) }}">সংশোধন</a>{% endif %} <a class="btn sm" href="{{ url_for('payslip', slip_id=s.id) }}">বিবরণী</a></td>
     </tr>
   {% endfor %}
+  <tr class="sub"><td colspan="{{ 4 + acols|length }}">উপমোট — {{ dept }}</td><td class="num">{{ gt.gross|taka }}</td><td></td><td></td><td class="num">{{ gt.total_deduction|taka }}</td><td class="num">{{ gt.net|taka }}</td><td></td></tr>
+  <tr class="gap"><td colspan="{{ 10 + acols|length }}"></td></tr>
+  {% endfor %}
   </tbody>
   <tfoot><tr>
-    <td colspan="4">সর্বমোট ({{ slips|length|bn }} জন)</td>
+    <td colspan="3">সর্বমোট ({{ slips|length|bn }} জন)</td>
     {% for k, label in acols %}<td class="num">{{ totals[k]|taka }}</td>{% endfor %}
     <td class="num">{{ other_a_total|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ (totals.pf_fund + totals.pf_own)|taka }}</td>
     <td class="num">{{ (totals.total_deduction - totals.pf_fund - totals.pf_own)|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td><td></td>

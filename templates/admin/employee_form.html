@@ -2,7 +2,7 @@
 {% block title %}{{ 'তথ্য সম্পাদনা' if emp and emp.id else 'নতুন কর্মচারী' }}{% endblock %}
 {% macro f(name, label, type='text', hint='', list=None, req=False) %}
   <div class="field"><label for="{{ name }}">{{ label }}{% if req %} *{% endif %}</label>
-    <input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ (emp[name] if emp and emp[name] is not none else '')|plain }}" {{ 'required' if req }} {% if list %}list="{{ list }}"{% endif %}>
+    <input id="{{ name }}" name="{{ name }}" type="{{ type }}" value="{{ (emp[name] if emp and emp[name] is not none else (new_code if name == 'code' else ''))|plain }}" {{ 'required' if req }} {% if list %}list="{{ list }}"{% endif %}>
     {% if hint %}<div class="hint">{{ hint }}</div>{% endif %}</div>
 {% endmacro %}
 {% block content %}
@@ -17,7 +17,7 @@
 
   <fieldset><legend>ব্যক্তিগত তথ্য</legend>
     <div class="grid g3">
-      {{ f('code', 'কর্মচারী আইডি', hint='এটিই লগইন আইডি হবে', req=True) }}
+      {{ f('code', 'কর্মচারী আইডি', hint='পরের নম্বর নিজে থেকে বসেছে; এটিই লগইন আইডি ও প্রথম পাসওয়ার্ড', req=True) }}
       {{ f('name_bn', 'নাম (বাংলায়)', req=True) }}
       {{ f('name_en', 'নাম (ইংরেজিতে)') }}
       {{ f('father_name', 'পিতার নাম') }}

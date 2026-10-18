@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS employees (
     join_date        TEXT,
     prl_date         TEXT,
     status           TEXT DEFAULT 'active',         -- active / inactive
+    separation_reason TEXT,                         -- নিষ্ক্রিয়ের কারণ: অবসর / পদত্যাগ / বদলি ...
+    separation_date  TEXT,
     grade            INTEGER,
     basic            REAL    NOT NULL DEFAULT 0,    -- ৩০-০৬-২০২৬ এর মূল বেতন (২০১৫ স্কেল)
     children         INTEGER NOT NULL DEFAULT 0,    -- শিক্ষা সহায়ক ভাতার জন্য

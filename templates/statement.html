@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}বেতন বিবরণী — {{ emp.name_bn }}{% endblock %}
+{% block content %}
+<div class="topbar no-print">
+  <h1>বেতন বিবরণী</h1>
+  <div class="actions">
+    <button class="primary" id="pdf" type="button">PDF ডাউনলোড</button>
+    <button type="button" onclick="window.print()">প্রিন্ট</button>
+  </div>
+</div>
+
+<form class="card inline-form no-print" method="get">
+  {% macro ym(prefix, val) %}
+    <select name="{{ prefix }}_m" aria-label="মাস">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == val[1] }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select>
+    <select name="{{ prefix }}_y" aria-label="বছর">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == val[0] }}>{{ y|bn }}</option>{% endfor %}</select>
+  {% endmacro %}
+  <div class="field"><label>যে মাস থেকে</label><div class="ym">{{ ym('from', start) }}</div></div>
+  <div class="field"><label>যে মাস পর্যন্ত</label><div class="ym">{{ ym('to', end) }}</div></div>
+  <input type="hidden" name="from" id="from"><input type="hidden" name="to" id="to">
+  <button type="submit">দেখুন</button>
+</form>
+
+<div class="slip statement" id="doc">
+  <header>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="">
+    <h1>{{ settings.office_name }}</h1>
+    <div class="muted">{{ settings.office_address }}</div>
+    <h2 style="margin:8px 0 0">বেতন বিবরণী · {{ month_label(start[0], start[1]) }} — {{ month_label(end[0], end[1]) }}</h2>
+  </header>
+  <div class="grid g2" style="gap:4px 24px;margin-bottom:14px">
+    <div>নাম: <b>{{ emp.name_bn }}</b></div><div>আইডি: <b>{{ emp.code }}</b></div>
+    <div>পদবি: {{ emp.designation or '—' }}</div><div>শাখা: {{ emp.department or '—' }}</div>
+    <div>গ্রেড: {{ emp.grade|bn if emp.grade else '—' }}</div><div>ব্যাংক হিসাব নং: {{ emp.account_no|bn if emp.account_no else '—' }}</div>
+  </div>
+  {% if slips %}
+  <table class="st">
+    <thead><tr><th>মাস</th><th class="num">মূল বেতন</th><th class="num">বাড়িভাড়া</th><th class="num">চিকিৎসা</th><th class="num">অন্যান্য ভাতা</th><th class="num">মোট বেতন</th><th class="num">কর্তন</th><th class="num">নিট প্রাপ্তি</th></tr></thead>
+    <tbody>
+    {% for s in slips %}
+      {% set other = s.gross - s.basic - s.house_rent - s.medical %}
+      <tr><td>{{ month_label(s.year, s.month) }}{% if s.status != 'final' %} <span class="badge draft">খসড়া</span>{% endif %}</td>
+        <td class="num">{{ s.basic|taka }}</td><td class="num">{{ s.house_rent|taka }}</td><td class="num">{{ s.medical|taka }}</td>
+        <td class="num">{{ other|taka }}</td><td class="num">{{ s.gross|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><td>মোট ({{ slips|length|bn }} মাস)</td><td class="num">{{ totals.basic|taka }}</td><td class="num">{{ totals.house_rent|taka }}</td><td class="num">{{ totals.medical|taka }}</td>
+      <td class="num">{{ (totals.gross - totals.basic - totals.house_rent - totals.medical)|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td></tr></tfoot>
+  </table>
+  <p class="hint">অন্যান্য ভাতা: শিক্ষা, টিফিন, যাতায়াত, মোবাইল, ধোলাই, অফিস প্রদত্ত PF, উৎসব/নববর্ষ ভাতা ও বকেয়া। কর্তন: PF ও অন্যান্য কর্তন।</p>
+  {% else %}
+  <p class="muted" style="padding:20px 0;text-align:center">এই সময়ের মধ্যে কোনো {{ 'চূড়ান্ত ' if user.role != 'admin' }}বেতনের রেকর্ড নেই।</p>
+  {% endif %}
+  <div class="sign">
+    <div>প্রস্তুতকারী</div>
+    <div>{% if settings.accounts_officer_name %}<b>{{ settings.accounts_officer_name }}</b><br>{% endif %}{{ settings.accounts_officer_designation or 'হিসাবরক্ষণ কর্মকর্তা' }}<br>{{ settings.office_name }}</div>
+  </div>
+  <p class="small muted" style="margin-top:18px">বিবরণী তৈরির তারিখ: {{ today.isoformat()|bndate }}</p>
+</div>
+
+{# অ্যাপের সাথেই রাখা (MIT লাইসেন্স) — ইন্টারনেট ছাড়া অফিসের নেটওয়ার্কেও PDF হবে #}
+<script src="{{ url_for('static', filename='vendor/html2canvas-1.4.1.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/jspdf-2.5.1.umd.min.js') }}"></script>
+<script>
+  (function () {
+    // মাস/বছর ড্রপডাউন → from=YYYY-MM, to=YYYY-MM
+    var form = document.querySelector('form.no-print');
+    form.addEventListener('submit', function () {
+      ['from', 'to'].forEach(function (p) {
+        document.getElementById(p).value = form[p + '_y'].value + '-' + form[p + '_m'].value;
+        form[p + '_y'].disabled = form[p + '_m'].disabled = true;
+      });
+    });
+    var btn = document.getElementById('pdf');
+    btn.addEventListener('click', async function () {
+      if (!window.html2canvas || !window.jspdf) { window.print(); return; }  // লাইব্রেরি না পেলে প্রিন্ট → PDF হিসেবে সেভ
+      btn.disabled = true; btn.textContent = 'তৈরি হচ্ছে…';
+      try {
+        if (document.fonts && document.fonts.ready) await document.fonts.ready;
+        var doc = document.getElementById('doc');
+        doc.classList.add('capturing');
+        var canvas = await html2canvas(doc, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        doc.classList.remove('capturing');
+        var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        var W = 210, H = 297, M = 10, CW = W - 2 * M, pxPerMm = canvas.width / CW, pageH = (H - 2 * M) * pxPerMm, sy = 0, first = true;
+        while (sy < canvas.height) {
+          if (!first) pdf.addPage();
+          var sh = Math.min(pageH, canvas.height - sy), part = document.createElement('canvas');
+          part.width = canvas.width; part.height = sh;
+          part.getContext('2d').drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+          pdf.addImage(part.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, CW, sh / pxPerMm);
+          sy += sh; first = false;
+        }
+        pdf.save({{ ('NCC_Beton_Biboroni_' ~ emp.code ~ '_' ~ start[0] ~ '-' ~ start[1] ~ '_' ~ end[0] ~ '-' ~ end[1] ~ '.pdf')|tojson }});
+      } catch (e) { console.error(e); window.print(); }
+      finally { btn.disabled = false; btn.textContent = 'PDF ডাউনলোড'; }
+    });
+  })();
+</script>
+{% endblock %}

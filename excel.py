@@ -7,10 +7,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from bn import MONTHS_BN, bn_num
+from payroll import group_by_department
 
 FONT = "Nirmala UI"
 HEAD_FILL = PatternFill("solid", fgColor="1F5F4A")
 TOTAL_FILL = PatternFill("solid", fgColor="E6F0EC")
+DEPT_FILL = PatternFill("solid", fgColor="F3F7F5")
+GRAND_FILL = PatternFill("solid", fgColor="CFE3DA")
 THIN = Side(style="thin", color="B7C4BE")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 MONEY = "#,##0"
@@ -46,10 +49,11 @@ def _style_body(ws, first, last, ncols, money_from):
                 c.number_format = MONEY_PAISA if isinstance(v, float) and not v.is_integer() else MONEY
 
 
-def _totals_row(ws, row, first, last, label_col, money_cols):
-    ws.cell(row=row, column=label_col, value="সর্বমোট").font = Font(name=FONT, bold=True)
-    for col in range(1, ws.max_column + 1):
+def _totals_row(ws, row, first, last, label_col, money_cols, label="সর্বমোট", ncols=None):
+    ws.cell(row=row, column=label_col, value=label).font = Font(name=FONT, bold=True)
+    for col in range(1, (ncols or ws.max_column) + 1):
         ws.cell(row=row, column=col).fill = TOTAL_FILL
+        ws.cell(row=row, column=col).border = BORDER
     for col in money_cols:
         L = get_column_letter(col)
         c = ws.cell(row=row, column=col, value=f"=SUM({L}{first}:{L}{last})")
@@ -57,6 +61,18 @@ def _totals_row(ws, row, first, last, label_col, money_cols):
         paisa = any(isinstance(ws.cell(row=r, column=col).value, float)
                     and not ws.cell(row=r, column=col).value.is_integer() for r in range(first, last + 1))
         c.number_format = MONEY_PAISA if paisa else MONEY
+
+
+def _signature(ws, row, ncols, settings):
+    """নিচে সইয়ের ঘর: বামে প্রস্তুতকারী, ডানে হিসাবরক্ষণ কর্মকর্তা (নাম ও পদবি সেটিং থেকে)।"""
+    right = max(ncols - 3, 4)
+    lines_left = ["……………………………", "প্রস্তুতকারী"]
+    lines_right = ["……………………………", settings.get("accounts_officer_name") or "",
+                   settings.get("accounts_officer_designation") or "হিসাবরক্ষণ কর্মকর্তা", settings["office_name"]]
+    for i, t in enumerate(lines_left):
+        ws.cell(row=row + i, column=2, value=t).font = Font(name=FONT, bold=i == 1)
+    for i, t in enumerate(x for x in lines_right if x):
+        ws.cell(row=row + i, column=right, value=t).font = Font(name=FONT, bold=i == 1)
 
 
 def _widths(ws, widths):
@@ -88,32 +104,58 @@ def payroll_workbook(run, slips, settings):
     ded_cols = ([("pf_fund", "PF (অফিস অংশ জমা)"), ("pf_own", "PF (নিজ অংশ)")] if has_pf else []) + \
         ([("revenue_stamp", "রাজস্ব স্ট্যাম্প")] if has_stamp else [])
 
-    info = ["ক্রম", "আইডি", "নাম", "পদবি", "শাখা", "গ্রেড", "হিসাব নং"]
+    info = ["ক্রম", "আইডি", "নাম", "পদবি", "গ্রেড", "হিসাব নং"]
     headers = (info + [h for _, h in allowance_cols] + ["অন্যান্য ভাতা / বকেয়া", "মোট বেতন"] + [h for _, h in ded_cols]
                + ["অন্যান্য কর্তন", "মোট কর্তন", "নিট প্রদেয়"])
     n = len(headers)
+    money_from = len(info) + 1
     _title(ws, settings, f"মাসিক বেতন শিট — {period}", n)
     hr = 5
     _header(ws, hr, headers)
 
+    # শাখাভিত্তিক: শাখার নাম → কর্মচারীরা → উপমোট → একটি ফাঁকা সারি
     r = hr
-    for i, s in enumerate(slips, 1):
+    subtotal_rows = []
+    for dept, group in group_by_department(slips):
         r += 1
-        oa = round(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])), 2)
-        od = round(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])), 2)
-        values = ([i, s["code"], s["name_bn"], s["designation"], s["department"], s["grade"], s["account_no"]]
-                  + [s[k] for k, _ in allowance_cols] + [oa, s["gross"]] + [s[k] for k, _ in ded_cols]
-                  + [od, s["total_deduction"], s["net"]])
-        for col, v in enumerate(values, 1):
-            ws.cell(row=r, column=col, value=v)
-    first, last = hr + 1, max(r, hr + 1)
-    money_from = len(info) + 1
-    _style_body(ws, first, last, n, money_from)
-    _totals_row(ws, last + 1, first, last, 3, range(money_from, n + 1))
-    ws.freeze_panes = ws.cell(row=hr + 1, column=4)
-    _widths(ws, [6, 10, 24, 20, 16, 7, 18] + [12] * (n - len(info)))
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+        c = ws.cell(row=r, column=1, value=f"{dept}  ({bn_num(len(group))} জন)")
+        c.font = Font(name=FONT, bold=True, size=12, color="1F5F4A")
+        c.fill = DEPT_FILL
+        c.border = BORDER
+        first = r + 1
+        for i, s in enumerate(group, 1):
+            r += 1
+            oa = round(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])), 2)
+            od = round(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])), 2)
+            values = ([i, s["code"], s["name_bn"], s["designation"], s["grade"], s["account_no"]]
+                      + [s[k] for k, _ in allowance_cols] + [oa, s["gross"]] + [s[k] for k, _ in ded_cols]
+                      + [od, s["total_deduction"], s["net"]])
+            for col, v in enumerate(values, 1):
+                ws.cell(row=r, column=col, value=v)
+        _style_body(ws, first, r, n, money_from)
+        r += 1
+        _totals_row(ws, r, first, r - 1, 3, range(money_from, n + 1), label="উপমোট", ncols=n)
+        subtotal_rows.append(r)
+        r += 1  # শাখার মাঝে বিরতি
+    r += 1
+    ws.cell(row=r, column=3, value=f"সর্বমোট ({bn_num(len(slips))} জন)").font = Font(name=FONT, bold=True, size=12)
+    for col in range(1, n + 1):
+        cell = ws.cell(row=r, column=col)
+        cell.fill = GRAND_FILL
+        cell.border = BORDER
+        if col >= money_from and subtotal_rows:
+            L = get_column_letter(col)
+            cell.value = "=" + "+".join(f"{L}{x}" for x in subtotal_rows)
+            cell.font = Font(name=FONT, bold=True, size=12)
+            cell.number_format = MONEY_PAISA
+    _signature(ws, r + 4, n, settings)
+    ws.freeze_panes = f"D{hr + 1}"
+    _widths(ws, [6, 11, 26, 22, 7, 18] + [12] * (n - len(info)))
+    ws.print_title_rows = f"{hr}:{hr}"
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
     # ব্যাংক অ্যাডভাইস
@@ -127,7 +169,8 @@ def payroll_workbook(run, slips, settings):
     blast = hr + max(len(slips), 1)
     _style_body(bank, hr + 1, blast, len(bh), 6)
     _totals_row(bank, blast + 1, hr + 1, blast, 3, [6])
-    _widths(bank, [6, 10, 26, 22, 22, 18])
+    _signature(bank, blast + 5, len(bh), settings)
+    _widths(bank, [6, 11, 26, 22, 22, 18])
 
     # শাখাভিত্তিক সারাংশ
     summary = wb.create_sheet("শাখাভিত্তিক সারাংশ")
@@ -135,19 +178,17 @@ def payroll_workbook(run, slips, settings):
     _title(summary, settings, f"শাখাভিত্তিক সারাংশ — {period}", len(sh))
     _header(summary, hr, sh)
     by_dept = {}
-    for s in slips:
-        d = by_dept.setdefault(s["department"] or "—", [0, 0, 0, 0])
-        d[0] += 1
-        d[1] += s["gross"]
-        d[2] += s["total_deduction"]
-        d[3] += s["net"]
-    for i, (dept, vals) in enumerate(sorted(by_dept.items()), 1):
+    for dept, group in group_by_department(slips):
+        by_dept[dept] = [len(group), round(sum(x["gross"] for x in group), 2),
+                         round(sum(x["total_deduction"] for x in group), 2), round(sum(x["net"] for x in group), 2)]
+    for i, (dept, vals) in enumerate(by_dept.items(), 1):
         for col, v in enumerate([dept] + vals, 1):
             summary.cell(row=hr + i, column=col, value=v)
     slast = hr + max(len(by_dept), 1)
     _style_body(summary, hr + 1, slast, len(sh), 3)
     _totals_row(summary, slast + 1, hr + 1, slast, 1, range(2, 6))
-    _widths(summary, [26, 16, 18, 16, 18])
+    _signature(summary, slast + 5, len(sh), settings)
+    _widths(summary, [40, 16, 18, 16, 18])
     return _save(wb)
 
 
