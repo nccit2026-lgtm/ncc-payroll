@@ -61,6 +61,12 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at       TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- শাখা/বিভাগের তালিকা (কর্মচারী না থাকলেও শাখা আগে থেকে রাখা যায়)
+CREATE TABLE IF NOT EXISTS departments (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
 -- কর্মচারীভিত্তিক অতিরিক্ত ভাতা / কর্তন (প্রতি মাসে বসবে)
 CREATE TABLE IF NOT EXISTS employee_items (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

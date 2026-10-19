@@ -141,9 +141,17 @@ def test_full_flow():
         assert c.get(url).status_code == 200, url
 
     # শাখার নাম একসাথে বদল
-    post(c, "/admin/departments/rename", {"old": "সাধারণ শাখা", "new": "প্রশাসন"})
+    # শাখা: নতুন যোগ (কর্মচারী ছাড়াই), নাম পরিবর্তন, খালি শাখা মোছা, কর্মচারী থাকলে মোছা যায় না
+    post(c, "/admin/departments", {"action": "add", "name": "আইসিটি শাখা"})
+    assert 'আইসিটি শাখা</option>' in c.get("/admin/employees/new").get_data(as_text=True)
+    post(c, "/admin/departments", {"action": "rename", "old": "সাধারণ শাখা", "name": "প্রশাসন"})
+    post(c, "/admin/departments", {"action": "delete", "old": "প্রশাসন"})
+    post(c, "/admin/departments", {"action": "delete", "old": "আইসিটি শাখা"})
     with app.app_context():
         assert get_db().execute("SELECT department FROM employees WHERE id = ?", (emp_id,)).fetchone()[0] == "প্রশাসন"
+        names = [r[0] for r in get_db().execute("SELECT name FROM departments")]
+        assert "প্রশাসন" in names and "সাধারণ শাখা" not in names and "আইসিটি শাখা" not in names
+    assert c.get("/admin/departments").status_code == 200
 
     # চূড়ান্ত শিট মোছা যাবে না; CSRF ছাড়া POST বাতিল
     post(c, f"/admin/payroll/{run_id}/delete")
@@ -346,9 +354,16 @@ def test_bonus_religion_filters_font():
     assert [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)].count("উপমোট") == 2
 
     # একসাথে ধর্ম সেট
-    post(c, "/admin/employees/religion", {"religion": "ইসলাম", "ids": ["5"]})
+    # টিক দিয়ে একসাথে নিষ্ক্রিয় ও আবার সক্রিয়; ধর্ম বদলানোর বাল্ক অপশন আর নেই
+    assert c.post("/admin/employees/religion", data={"csrf": csrf(c)}).status_code == 404
+    post(c, "/admin/employees/bulk-status", {"action": "deactivate", "reason": "বাতিল", "date": "2026-11-30", "ids": ["3", "5"]})
     with app.app_context():
-        assert get_db().execute("SELECT religion FROM employees WHERE id = 5").fetchone()[0] == "ইসলাম"
+        rows = get_db().execute("SELECT id, status, separation_reason, separation_date FROM employees WHERE id IN (3, 5)").fetchall()
+        assert [tuple(r) for r in rows] == [(3, "inactive", "বাতিল", "2026-11-30"), (5, "inactive", "বাতিল", "2026-11-30")]
+    post(c, "/admin/employees/bulk-status", {"action": "activate", "ids": ["3"]})
+    with app.app_context():
+        assert get_db().execute("SELECT status FROM employees WHERE id = 3").fetchone()[0] == "active"
+    assert "আবার সক্রিয় করুন" in c.get("/admin/employees?status=inactive").get_data(as_text=True)
 
     # নিজস্ব ফন্ট
     assert "fonts/fonts.css" in c.get("/admin").get_data(as_text=True)

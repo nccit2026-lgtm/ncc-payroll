@@ -6,7 +6,7 @@
   <p class="hint" style="margin-top:-6px">অবসর, পদত্যাগ, বদলি ইত্যাদিতে নিষ্ক্রিয় তালিকায় সরান — পুরনো বেতনের রেকর্ড থেকে যাবে, পরে চাইলে আবার সক্রিয় করা যাবে।</p>
   <form method="post" action="{{ url_for('employee_deactivate', emp_id=emp.id) }}" class="inline-form" onsubmit="return confirm('{{ emp.name_bn }} কে নিষ্ক্রিয় তালিকায় সরাবেন?')">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div class="field"><label>কারণ</label><select name="reason">{% for r in ['অবসর', 'অবসর-উত্তর ছুটি (PRL)', 'পদত্যাগ', 'বদলি', 'চাকরিচ্যুত', 'মৃত্যু', 'অন্যান্য'] %}<option>{{ r }}</option>{% endfor %}</select></div>
+    <div class="field"><label>কারণ</label><select name="reason">{% for r in ['অবসর', 'অবসর-উত্তর ছুটি (PRL)', 'পদত্যাগ', 'বদলি', 'চাকরিচ্যুত', 'মৃত্যু', 'বাতিল', 'অন্যান্য'] %}<option>{{ r }}</option>{% endfor %}</select></div>
     <div class="field"><label>তারিখ</label><input type="date" name="date" value="{{ today.isoformat() }}"></div>
     <button class="danger" type="submit">নিষ্ক্রিয় তালিকায় সরান</button>
   </form>

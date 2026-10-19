@@ -65,6 +65,9 @@ def init_db():
             if col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
     _drop_month_unique(conn)
+    # কর্মচারীদের শাখাগুলো তালিকায় (আইডির ক্রমে প্রথম যে শাখা আসে সেই ক্রমে)
+    conn.execute("INSERT OR IGNORE INTO departments (name) SELECT department FROM employees "
+                 "WHERE department IS NOT NULL AND department != '' GROUP BY department ORDER BY MIN(code)")
 
     for key, value in DEFAULT_SETTINGS.items():
         conn.execute(

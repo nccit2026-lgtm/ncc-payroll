@@ -35,7 +35,12 @@
   <fieldset><legend>চাকরির তথ্য</legend>
     <div class="grid g3">
       {{ f('designation', 'পদবি', list='desigs') }}
-      {{ f('department', 'শাখা / বিভাগ', list='depts') }}
+      <div class="field"><label for="department">শাখা / বিভাগ</label>
+        <select id="department" name="department"><option value="">— নির্বাচন করুন —</option>
+          {% for d in depts %}<option {{ 'selected' if emp and emp.department == d }}>{{ d }}</option>{% endfor %}
+          {% if emp and emp.department and emp.department not in depts %}<option selected>{{ emp.department }}</option>{% endif %}
+        </select>
+        <div class="hint">তালিকায় নেই? <a href="{{ url_for('departments') }}" target="_blank">নতুন শাখা যোগ করুন</a>, তারপর পাতাটি রিফ্রেশ করুন।</div></div>
       <div class="field"><label>চাকরির ধরন</label><select name="employment_type">{% for t in ['স্থায়ী', 'অস্থায়ী', 'চুক্তিভিত্তিক', 'মাস্টাররোল'] %}<option {{ 'selected' if emp and emp.employment_type == t }}>{{ t }}</option>{% endfor %}</select></div>
       {{ f('join_date', 'যোগদানের তারিখ', 'date') }}
       {{ f('prl_date', 'পিআরএল শুরুর তারিখ', 'date') }}

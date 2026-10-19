@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}শাখা ব্যবস্থাপনা{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>শাখা / বিভাগ</h1><div class="muted">{{ depts|length|bn }}টি শাখা</div></div>
+  <a class="btn" href="{{ url_for('employees') }}">← কর্মচারী তালিকা</a></div>
+
+<form class="card inline-form" method="post">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="add">
+  <div class="field" style="flex:1;min-width:240px"><label>নতুন শাখার নাম</label><input name="name" required placeholder="যেমন: আইসিটি শাখা"></div>
+  <button class="primary" type="submit">+ শাখা যোগ করুন</button>
+</form>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>শাখা</th><th class="num">সক্রিয় কর্মচারী</th><th>নাম পরিবর্তন</th><th></th></tr></thead>
+  <tbody>
+  {% for d in depts %}
+    <tr>
+      <td><a href="{{ url_for('employees', dept=d) }}"><b>{{ d }}</b></a></td>
+      <td class="num">{{ (counts[d] or 0)|bn }}{% if (totals[d] or 0) > (counts[d] or 0) %} <span class="small muted">(+{{ (totals[d] - (counts[d] or 0))|bn }} নিষ্ক্রিয়)</span>{% endif %}</td>
+      <td>
+        <form method="post" class="inline-form">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="rename"><input type="hidden" name="old" value="{{ d }}">
+          <input name="name" value="{{ d }}" aria-label="নতুন নাম" style="min-width:220px;flex:1"><button class="sm" type="submit">সংরক্ষণ</button>
+        </form>
+      </td>
+      <td class="actions-cell">
+        {% if not totals[d] %}
+        <form method="post" class="inline" onsubmit="return confirm('{{ d }} শাখা মুছে ফেলবেন?')">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="delete"><input type="hidden" name="old" value="{{ d }}">
+          <button class="sm danger" type="submit">মুছুন</button>
+        </form>
+        {% else %}<span class="hint">কর্মচারী আছে</span>{% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">এখনো কোনো শাখা নেই।</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="hint">নাম পরিবর্তন করলে ওই শাখার সব কর্মচারীর শাখার নামও বদলে যাবে। অন্য একটি বিদ্যমান শাখার নাম দিলে দুটি শাখা এক হয়ে যাবে। কর্মচারী থাকলে শাখা মোছা যায় না।</p>
+{% endblock %}

@@ -221,8 +221,14 @@ def next_code():
     return f"NCC-{(max(nums) + 1) if nums else 1:04d}"
 
 
+def all_departments():
+    return [r[0] for r in get_db().execute("SELECT name FROM departments ORDER BY id")]
+
+
 def save_employee(data, emp_id=None):
     conn = get_db()
+    if data.get("department"):
+        conn.execute("INSERT OR IGNORE INTO departments (name) VALUES (?)", (data["department"],))
     cols = list(data.keys())
     if emp_id:
         conn.execute(f"UPDATE employees SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
@@ -416,19 +422,17 @@ def register_routes(app):
             sql += " AND religion = ?"
             args.append(religion)
         rows = get_db().execute(sql + " ORDER BY code", args).fetchall()
-        depts = [r[0] for r in get_db().execute(
-            "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
+        depts = all_departments()
         counts = dict(get_db().execute("SELECT status, COUNT(*) FROM employees GROUP BY status").fetchall())
         no_religion = get_db().execute("SELECT COUNT(*) FROM employees WHERE status = 'active' AND "
                                        "(religion IS NULL OR religion = '')").fetchone()[0]
         return render_template("admin/employees.html", rows=rows, q=q, dept=dept, status=status, depts=depts,
-                               religion=religion, no_religion=no_religion,
+                               religion=religion, no_religion=no_religion, today_iso=date.today().isoformat(),
                                counts=counts, next_code=next_code())
 
     def employee_form_context(emp=None):
         conn = get_db()
-        depts = [r[0] for r in conn.execute(
-            "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL ORDER BY department")]
+        depts = all_departments()
         desigs = [r[0] for r in conn.execute(
             "SELECT DISTINCT designation FROM employees WHERE designation IS NOT NULL ORDER BY designation")]
         return {"emp": emp, "scales": payscale.OLD, "depts": depts, "desigs": desigs, "new_code": next_code()}
@@ -628,29 +632,64 @@ def register_routes(app):
             return redirect(url_for("employees"))
         return render_template("admin/import.html")
 
-    @app.route("/admin/employees/religion", methods=["POST"])
+    @app.route("/admin/employees/bulk-status", methods=["POST"])
     @admin_required
-    def employees_set_religion():
-        """তালিকা থেকে টিক দেওয়া কর্মচারীদের ধর্ম একসাথে সেট।"""
-        religion = request.form.get("religion")
+    def employees_bulk_status():
+        """তালিকা থেকে টিক দেওয়া কর্মচারীদের একসাথে নিষ্ক্রিয় (অবসর/পদত্যাগ/বাতিল ...) বা আবার সক্রিয় করা।"""
         ids = [to_int(i) for i in request.form.getlist("ids")]
-        if religion in RELIGIONS and ids:
-            get_db().executemany("UPDATE employees SET religion = ? WHERE id = ?", [(religion, i) for i in ids])
+        action = request.form.get("action")
+        if not ids:
+            flash("অন্তত একজন কর্মচারী টিক দিন।", "error")
+        elif action == "activate":
+            get_db().executemany("UPDATE employees SET status = 'active', separation_reason = NULL, "
+                                 "separation_date = NULL WHERE id = ?", [(i,) for i in ids])
             get_db().commit()
-            flash(f"{bn_num(len(ids))} জনের ধর্ম '{religion}' সেট করা হয়েছে।", "ok")
+            flash(f"{bn_num(len(ids))} জনকে আবার সক্রিয় করা হয়েছে।", "ok")
         else:
-            flash("ধর্ম ও অন্তত একজন কর্মচারী নির্বাচন করুন।", "error")
+            reason = request.form.get("reason") or "অন্যান্য"
+            when = clean_date(request.form.get("date")) or date.today().isoformat()
+            get_db().executemany("UPDATE employees SET status = 'inactive', separation_reason = ?, separation_date = ? "
+                                 "WHERE id = ?", [(reason, when, i) for i in ids])
+            get_db().commit()
+            flash(f"{bn_num(len(ids))} জনকে নিষ্ক্রিয় তালিকায় সরানো হয়েছে ({reason}, {bn_date(when)})। "
+                  "পরের বেতন শিটে আসবেন না, লগইন বন্ধ; পুরনো রেকর্ড থাকবে।", "ok")
         return redirect(request.referrer or url_for("employees"))
 
-    @app.route("/admin/departments/rename", methods=["POST"])
+    @app.route("/admin/departments", methods=["GET", "POST"])
     @admin_required
-    def department_rename():
-        old, new = request.form.get("old", "").strip(), request.form.get("new", "").strip()
-        if old and new:
-            n = get_db().execute("UPDATE employees SET department = ? WHERE department = ?", (new, old)).rowcount
-            get_db().commit()
-            flash(f"'{old}' শাখার {bn_num(n)} জনের শাখার নাম '{new}' করা হয়েছে।", "ok")
-        return redirect(url_for("employees", dept=new or old))
+    def departments():
+        """শাখা/বিভাগ: নতুন যোগ, নাম পরিবর্তন, খালি শাখা মোছা।"""
+        conn = get_db()
+        if request.method == "POST":
+            action = request.form.get("action")
+            name = re.sub(r"\s+", " ", request.form.get("name", "")).strip()
+            old = request.form.get("old", "").strip()
+            if action == "add" and name:
+                if conn.execute("SELECT 1 FROM departments WHERE name = ?", (name,)).fetchone():
+                    flash(f"'{name}' শাখা আগে থেকেই আছে।", "warn")
+                else:
+                    conn.execute("INSERT INTO departments (name) VALUES (?)", (name,))
+                    flash(f"নতুন শাখা '{name}' যোগ হয়েছে। কর্মচারীর তথ্য সম্পাদনায় এখন এটি বাছাই করা যাবে।", "ok")
+            elif action == "rename" and old and name and old != name:
+                n = conn.execute("UPDATE employees SET department = ? WHERE department = ?", (name, old)).rowcount
+                if conn.execute("SELECT 1 FROM departments WHERE name = ?", (name,)).fetchone():
+                    conn.execute("DELETE FROM departments WHERE name = ?", (old,))  # দুই শাখা এক হয়ে গেল
+                else:
+                    conn.execute("UPDATE departments SET name = ? WHERE name = ?", (name, old))
+                flash(f"'{old}' এর নাম '{name}' করা হয়েছে ({bn_num(n)} জন কর্মচারী)।", "ok")
+            elif action == "delete" and old:
+                n = conn.execute("SELECT COUNT(*) FROM employees WHERE department = ?", (old,)).fetchone()[0]
+                if n:
+                    flash(f"'{old}' শাখায় {bn_num(n)} জন কর্মচারী আছেন, তাই মোছা যাবে না। আগে তাঁদের অন্য শাখায় সরান।", "error")
+                else:
+                    conn.execute("DELETE FROM departments WHERE name = ?", (old,))
+                    flash(f"'{old}' শাখা মুছে ফেলা হয়েছে।", "ok")
+            conn.commit()
+            return redirect(url_for("departments"))
+        counts = dict(conn.execute("SELECT department, COUNT(*) FROM employees WHERE status = 'active' "
+                                   "GROUP BY department").fetchall())
+        totals = dict(conn.execute("SELECT department, COUNT(*) FROM employees GROUP BY department").fetchall())
+        return render_template("admin/departments.html", depts=all_departments(), counts=counts, totals=totals)
 
     # ---------- বেতন স্কেল ও ভাতা
 
