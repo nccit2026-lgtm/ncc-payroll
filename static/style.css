@@ -202,3 +202,9 @@ table.st th { position: static; }
 .chk-list .check { font-size: .9rem; }
 .chk-list.grades .check { min-width: 52px; }
 .nowrap { white-space: nowrap; }
+
+/* কর্মচারী তালিকা: উপরের অংশ ফ্রিজ */
+.sticky-head { position: sticky; top: 0; z-index: 6; background: var(--bg); padding-top: 14px; margin-top: -14px; }
+.list-scroll { overflow: auto; }
+.list-scroll thead th { position: sticky; top: 0; z-index: 2; }
+@media (max-width: 860px) { .sticky-head { position: static; } }

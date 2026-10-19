@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% block title %}কর্মচারী{% endblock %}
 {% block content %}
+{% if no_religion %}
+<div class="flash warn">{{ no_religion|bn }} জন সক্রিয় কর্মচারীর ধর্ম দেওয়া নেই — তাঁরা কোনো উৎসব ভাতা শিটে আসবেন না।
+  <a href="{{ url_for('employees', religion='none') }}">তালিকা দেখুন</a>; প্রত্যেকের "সম্পাদনা" থেকে অথবা Excel ইমপোর্টের "ধর্ম" কলাম দিয়ে দিন।</div>
+{% endif %}
+<div class="sticky-head" id="sticky-head">
 <div class="topbar">
   <div><h1>{{ 'নিষ্ক্রিয় কর্মচারী (অবসর/পদত্যাগ ইত্যাদি)' if status == 'inactive' else 'কর্মচারী তালিকা' }}</h1><div class="muted">{{ rows|length|bn }} জন পাওয়া গেছে · পরের নতুন আইডি: {{ next_code }}</div></div>
   <div class="actions">
@@ -24,10 +29,7 @@
     <select name="status"><option value="active" {{ 'selected' if status == 'active' }}>সক্রিয়</option><option value="inactive" {{ 'selected' if status == 'inactive' }}>নিষ্ক্রিয়</option><option value="" {{ 'selected' if status == '' }}>সব</option></select></div>
   <button type="submit">খুঁজুন</button>
 </form>
-{% if no_religion %}
-<div class="flash warn">{{ no_religion|bn }} জন সক্রিয় কর্মচারীর ধর্ম দেওয়া নেই — তাঁরা কোনো উৎসব ভাতা শিটে আসবেন না।
-  <a href="{{ url_for('employees', religion='none') }}">তালিকা দেখুন</a>; প্রত্যেকের "সম্পাদনা" থেকে অথবা Excel ইমপোর্টের "ধর্ম" কলাম দিয়ে দিন।</div>
-{% endif %}
+
 <form id="bulk" method="post" action="{{ url_for('employees_bulk_status') }}" class="card inline-form bulk-bar"
       onsubmit="return confirm('টিক দেওয়া কর্মচারীদের অবস্থা পরিবর্তন করবেন?')">
   <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -45,7 +47,8 @@
   <span class="hint" id="sel-count">তালিকা থেকে টিক দিন</span>
 </form>
 <p class="hint" style="margin:-8px 0 12px">শাখা যোগ, নাম পরিবর্তন বা মোছার জন্য <a href="{{ url_for('departments') }}">শাখা ব্যবস্থাপনা</a> পাতায় যান।</p>
-<div class="table-wrap">
+</div>
+<div class="table-wrap list-scroll" id="list-scroll">
 <table>
   <thead><tr><th><input type="checkbox" id="all" aria-label="সবাই"></th><th>আইডি</th><th>নাম</th><th>পদবি</th><th>শাখা</th><th>গ্রেড</th><th>ধর্ম</th><th class="num">মূল বেতন<div class="small muted">৩০-০৬-২০২৬</div></th><th>{{ 'কারণ ও তারিখ' if status != 'active' else 'মোবাইল' }}</th><th></th></tr></thead>
   <tbody>
@@ -71,6 +74,14 @@
     function count() { var n = document.querySelectorAll('.pick:checked').length; out.textContent = n ? n.toLocaleString('bn-BD') + ' জন নির্বাচিত' : 'তালিকা থেকে টিক দিন'; }
     all.addEventListener('change', function () { picks.forEach(function (c) { c.checked = all.checked; }); count(); });
     picks.forEach(function (c) { c.addEventListener('change', count); });
+    // উপরের অংশ ফ্রিজ: তালিকা নিজের জায়গায় স্ক্রল হয়, কলামের শিরোনামও আটকে থাকে
+    var box = document.getElementById('list-scroll');
+    function fit() {
+      if (window.innerWidth <= 860) { box.style.maxHeight = ''; return; }
+      // তালিকা পর্দার বাকি অংশ জুড়ে থাকবে, তাই পুরো পাতা না সরে শুধু তালিকা স্ক্রল হবে
+      box.style.maxHeight = Math.max(260, window.innerHeight - (box.getBoundingClientRect().top + window.scrollY) - 20) + 'px';
+    }
+    window.addEventListener('resize', fit); fit();
   })();
 </script>
 {% endblock %}
