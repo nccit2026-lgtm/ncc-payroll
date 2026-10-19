@@ -1,6 +1,7 @@
 """Excel (.xlsx) ফাইল তৈরি — মাসিক বেতন শিট, ব্যাংক অ্যাডভাইস, মাসভিত্তিক সারাংশ, কর্মচারী ইমপোর্ট টেমপ্লেট।"""
 import io
 import json
+import os
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -30,7 +31,23 @@ MONEY_PAISA = _lakh(".00")
 BN_INT = f"{BN}0"
 
 
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "logo.png")
+
+
+def _logo(ws, size=56, anchor="A1"):
+    """শিটের উপরে বাম কোণে নাসিকের লোগো (Pillow না থাকলে লোগো ছাড়াই)।"""
+    try:
+        from openpyxl.drawing.image import Image
+        img = Image(LOGO)
+    except Exception:
+        return
+    img.width = img.height = size
+    ws.add_image(img, anchor)
+
+
 def _title(ws, office, title, ncols):
+    _logo(ws)
+    ws.row_dimensions[1].height = 22
     for row, (text, size) in enumerate([(office["office_name"], 15), (office["office_address"], 11), (title, 13)], 1):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=ncols)
         c = ws.cell(row=row, column=1, value=text)
@@ -469,6 +486,9 @@ def ncc_workbook(run, slips, settings, filter_label=""):
     n = len(NCC_COLS)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n)
     _cell(ws, 1, 1, settings["office_name"], bold=True, size=14, align="center", border=False)
+    _logo(ws, size=50)
+    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[2].height = 20
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n)
     _cell(ws, 2, 1, f"{period} মাসের বেতন-ভাতার বিবরণী" + (f" ({filter_label})" if filter_label else ""),
           bold=True, size=12, align="center", border=False)
@@ -593,6 +613,9 @@ def ncc_workbook(run, slips, settings, filter_label=""):
     sn = len(sc)
     summary.merge_cells(start_row=1, start_column=1, end_row=1, end_column=sn)
     _cell(summary, 1, 1, settings["office_name"], bold=True, size=14, align="center", border=False)
+    _logo(summary, size=50)
+    summary.row_dimensions[1].height = 24
+    summary.row_dimensions[2].height = 20
     summary.merge_cells(start_row=2, start_column=1, end_row=2, end_column=sn)
     _cell(summary, 2, 1, f"{period} মাসের বেতন-ভাতার সারাংশ", bold=True, size=12, align="center", border=False)
     r = 4
@@ -659,6 +682,8 @@ def ncc_workbook(run, slips, settings, filter_label=""):
           "আয়কর কর্তন", "মোট কর্তন", "নীট বেতন", "আনুতোষিক"]
     note.merge_cells("A1:I1")
     _cell(note, 1, 1, settings["office_name"], bold=True, size=14, align="center", border=False)
+    _logo(note, size=50)
+    note.row_dimensions[1].height = 30
     note.merge_cells("A2:I2")
     _cell(note, 2, 1, f"{settings['office_name']}ে কর্মরত কর্মকর্তা ও কর্মচারীদের {period} মাসের বেতন-ভাতা পরিশোধের "
                       "নিমিত্তে বিবরণ নিম্নে উপস্থাপন করা হলো -", size=11, wrap=True, border=False)

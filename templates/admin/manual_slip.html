@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}পূর্ববর্তী মাসের বেতন এন্ট্রি{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1>পূর্ববর্তী মাসের বেতন এন্ট্রি — {{ emp.name_bn }}</h1><div class="muted">{{ emp.designation or '' }}{% if emp.department %} · {{ emp.department }}{% endif %} · আইডি {{ emp.code }}</div></div>
+  <div class="actions">
+    <a class="btn" href="{{ url_for('statement', emp_id=emp.id) }}">বেতন বিবরণী (PDF)</a>
+    <a class="btn" href="{{ url_for('employee_view', emp_id=emp.id) }}">← কর্মচারীর পাতা</a>
+  </div>
+</div>
+<p class="hint">যে মাসগুলোর বেতন শিট এই সফটওয়্যারে তৈরি হয়নি (যেমন সফটওয়্যার চালুর আগের ছয় মাস), সেগুলোর বেতন এখানে খাতওয়ারি লিখে রাখুন।
+  সংরক্ষণ করলেই কর্মচারীর বেতন বিবরণী ও বেতন ইতিহাসে আসবে — কর্মচারী নিজের লগইন থেকেও দেখতে ও PDF নিতে পারবেন।
+  মাসিক বেতন শিটের তালিকা ও মাসভিত্তিক রিপোর্টে এগুলো যোগ হয় না।</p>
+
+{% if entries %}
+<div class="card">
+  <h2>হাতে এন্ট্রি করা মাস</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>মাস</th><th>ধরন</th><th class="num">মোট বেতন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th><th></th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr><td>{{ month_label(e.year, e.month) }}</td><td>{{ e.title or run_kinds[e.kind] }}</td>
+        <td class="num">{{ e.gross|taka }}</td><td class="num">{{ e.total_deduction|taka }}</td><td class="num"><b>{{ e.net|taka }}</b></td>
+        <td style="white-space:nowrap"><a class="btn sm" href="{{ url_for('manual_slip', emp_id=emp.id, slip=e.id) }}">সংশোধন</a>
+          <form class="inline" method="post" action="{{ url_for('manual_slip_delete', slip_id=e.id) }}" onsubmit="return confirm('এই মাসের এন্ট্রি মুছে ফেলবেন?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="sm danger">মুছুন</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>{{ 'এন্ট্রি সংশোধন' if editing else 'নতুন এন্ট্রি' }}</h2>
+  {% if note %}<p class="flash warn">{{ note }}</p>{% endif %}
+
+  <form method="post" id="slipform" style="margin-top:14px">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if editing %}<input type="hidden" name="slip_id" value="{{ editing }}">{% endif %}
+    <div class="inline-form">
+      <div class="field"><label>বছর</label><input name="year" value="{{ year }}" inputmode="numeric" style="width:90px" required></div>
+      <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
+      <div class="field"><label>ধরন</label><select name="kind">{% for k, v in run_kinds.items() %}<option value="{{ k }}" {{ 'selected' if k == kind }}>{{ v }}</option>{% endfor %}</select></div>
+      <div class="field" style="flex:1;min-width:180px"><label>শিরোনাম (ভাতার ক্ষেত্রে, ঐচ্ছিক)</label><input name="title" value="{{ title }}" placeholder="যেমন: ঈদুল আজহা উৎসব ভাতা"></div>
+      <button type="submit" formmethod="get" formnovalidate name="calc" value="1" title="কর্মচারীর বর্তমান তথ্য ও বেতন স্কেল অনুযায়ী ঘরগুলো পূরণ হবে, তারপর প্রয়োজনমতো বদলান">হিসাব করে ঘর পূরণ (মাসিক বেতন)</button>
+    </div>
+    <div class="grid g2">
+      <fieldset><legend>বেতন ও ভাতা (+)</legend>
+        {% for f in allowance_fields %}<div class="field"><label>{{ FIELD_LABELS[f] }}</label><input class="plus" name="{{ f }}" value="{{ slip[f]|plain if slip[f] else '' }}" inputmode="decimal"></div>{% endfor %}
+        <h3>অন্যান্য ভাতা / বকেয়া</h3>
+        {% set oa = loads(slip.other_allowance) %}
+        {% for i in range(oa|length + 3) %}{% set it = oa[i] if i < oa|length else {} %}
+          <div class="grid g2" style="gap:8px"><div class="field"><input name="other_allowance_name" placeholder="বিবরণ" value="{{ it.name or '' }}"></div><div class="field"><input class="plus" name="other_allowance_amount" placeholder="টাকা" value="{{ it.amount|plain if it.amount is defined else '' }}" inputmode="decimal"></div></div>
+        {% endfor %}
+      </fieldset>
+      <fieldset><legend>কর্তন (−)</legend>
+        {% for f in deduction_fields %}<div class="field"><label>{{ FIELD_LABELS[f] }}</label><input class="minus" name="{{ f }}" value="{{ slip[f]|plain if slip[f] else '' }}" inputmode="decimal"></div>{% endfor %}
+        <h3>অন্যান্য কর্তন</h3>
+        <p class="hint" style="margin-top:-6px">যেমন: গৃহ নির্মাণ ঋণ, ভবিষ্য তহবিল অগ্রিম, বাসা ভাড়া কর্তন, আয়কর, বিভিন্ন কর্তন</p>
+        {% set od = loads(slip.other_deduction) %}
+        {% for i in range(od|length + 4) %}{% set it = od[i] if i < od|length else {} %}
+          <div class="grid g2" style="gap:8px"><div class="field"><input name="other_deduction_name" placeholder="বিবরণ" value="{{ it.name or '' }}" list="ded-names"></div><div class="field"><input class="minus" name="other_deduction_amount" placeholder="টাকা" value="{{ it.amount|plain if it.amount is defined else '' }}" inputmode="decimal"></div></div>
+        {% endfor %}
+        <datalist id="ded-names"><option value="গৃহ নির্মাণ ঋণ"><option value="ভবিষ্য তহবিল অগ্রিম"><option value="অন্যান্য ঋণ"><option value="বাসা ভাড়া কর্তন"><option value="আয়কর"><option value="বিভিন্ন কর্তন"></datalist>
+        <div class="card" style="background:var(--brand-soft);margin-top:12px">
+          <div>মোট বেতন: <b id="t-gross"></b></div><div>মোট কর্তন: <b id="t-ded"></b></div><div style="font-size:1.2rem">নিট প্রাপ্য: <b id="t-net"></b></div>
+        </div>
+      </fieldset>
+    </div>
+    <p class="hint">একই মাস ও ধরনের এন্ট্রি আগে থাকলে নতুনটি তার জায়গায় বসবে।</p>
+    <div class="actions"><button class="primary" type="submit">সংরক্ষণ করুন</button></div>
+  </form>
+</div>
+<script>
+  (function () {
+    var form = document.getElementById('slipform');
+    function n(el) { var v = (el.value || '').replace(/[০-৯]/g, function (d) { return '০১২৩৪৫৬৭৮৯'.indexOf(d); }).replace(/,/g, ''); return Number(v) || 0; }
+    function fmt(x) { return (Math.round(x * 100) / 100).toLocaleString('bn-BD'); }
+    function update() {
+      var p = 0, m = 0;
+      form.querySelectorAll('.plus').forEach(function (e) { p += n(e); });
+      form.querySelectorAll('.minus').forEach(function (e) { m += n(e); });
+      document.getElementById('t-gross').textContent = fmt(p);
+      document.getElementById('t-ded').textContent = fmt(m);
+      document.getElementById('t-net').textContent = fmt(p - m);
+    }
+    form.addEventListener('input', update); update();
+  })();
+</script>
+{% endblock %}

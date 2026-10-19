@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS payroll_runs (
     include_festival  INTEGER NOT NULL DEFAULT 0,
     include_boishakhi INTEGER NOT NULL DEFAULT 0,
     include_arrears   INTEGER NOT NULL DEFAULT 0,
+    manual            INTEGER NOT NULL DEFAULT 0,      -- ১ = সফটওয়্যারের আগের মাস, হাতে এন্ট্রি (তালিকা/রিপোর্টে আসে না)
     note              TEXT,
     created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
     finalized_at      TEXT

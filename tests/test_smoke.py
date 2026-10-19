@@ -499,6 +499,62 @@ def test_ncc_format_excel():
     assert simple.sheetnames[0] == "বেতন শিট"
 
 
+def test_manual_past_month_entry():
+    """সফটওয়্যারের আগের মাস: অ্যাডমিন হাতে খাতওয়ারি বেতন লেখেন → বিবরণীতে আসে, তালিকা/রিপোর্টে নয়।"""
+    db = os.path.join(tempfile.mkdtemp(), "m.db")
+    app = create_app(db)
+    c = app.test_client()
+    post(c, "/login", {"username": "admin", "password": "admin123"})
+    post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"})
+    post(c, "/admin/employees/new", {"code": "M1", "name_bn": "মাসুদ", "grade": "13", "basic": "19810", "status": "active",
+                                     "department": "সাধারণ শাখা", "dob": "1980-01-01", "inc_2026": "1", "inc_2027": "1",
+                                     "tiffin": "1", "transport": "1", "special_rate": "auto"})
+    assert "পূর্ববর্তী মাসের বেতন এন্ট্রি" in c.get("/admin/employees/1").get_data(as_text=True)
+    assert "<title>মাসুদ" in c.get("/admin/employees/1").get_data(as_text=True)
+    # হিসাব করে ঘর পূরণ (মার্চ ২০২৬ — পুরনো স্কেল)
+    html = c.get("/admin/employees/1/manual?year=2026&month=3&kind=salary&calc=1").get_data(as_text=True)
+    assert 'name="basic" value="19810"' in html
+    form = {"year": "2026", "month": "3", "kind": "salary", "basic": "19810", "house_rent": "8915", "medical": "1500",
+            "pf_own": "", "other_allowance_name": ["ধোলাই", ""], "other_allowance_amount": ["100", ""],
+            "other_deduction_name": ["গৃহ নির্মাণ ঋণ", "আয়কর"], "other_deduction_amount": ["2500", "৫০০"]}
+    post(c, "/admin/employees/1/manual", form)
+    form["month"] = "4"
+    post(c, "/admin/employees/1/manual", form)
+    post(c, "/admin/employees/1/manual", form)  # একই মাস আবার — বদলে যায়, দুবার নয়
+    with app.app_context():
+        from db import get_db
+        rows = get_db().execute("SELECT p.*, r.month, r.status, r.manual FROM payslips p JOIN payroll_runs r "
+                                "ON r.id = p.run_id ORDER BY r.month").fetchall()
+        assert [(r["month"], r["status"], r["manual"]) for r in rows] == [(3, "final", 1), (4, "final", 1)]
+        assert (rows[0]["gross"], rows[0]["total_deduction"], rows[0]["net"]) == (30325, 3000, 27325)
+        mar = rows[0]["id"]
+    # মাসিক শিটের তালিকা/রিপোর্টে নেই; বিবরণীতে আছে
+    assert "মার্চ ২০২৬" not in c.get("/admin/payroll").get_data(as_text=True)
+    assert "২৭,৩২৫" in c.get("/statement/1?from=2026-01&to=2026-06").get_data(as_text=True)
+    # কর্মচারী নিজেও দেখতে পান
+    emp_c = app.test_client()
+    post(emp_c, "/login", {"username": "M1", "password": "M1"})
+    post(emp_c, "/password", {"old": "M1", "new": "Masud#2026", "confirm": "Masud#2026"})
+    assert "২৭,৩২৫" in emp_c.get("/me/statement?from=2026-01&to=2026-06").get_data(as_text=True)
+    # হাতে এন্ট্রি থাকা মাসে পুরো শিট তৈরি আটকায় (দুবার যেন না আসে)
+    r = post(c, "/admin/payroll/new", {"year": "2026", "month": "3", "kind": "salary"}, follow_redirects=True)
+    assert "হাতে এন্ট্রি করা আছে" in r.get_data(as_text=True)
+    # সংশোধনে মাস বদলালে পুরনোটি সরে যায়
+    html = c.get(f"/admin/employees/1/manual?slip={mar}").get_data(as_text=True)
+    assert f'name="slip_id" value="{mar}"' in html and 'value="গৃহ নির্মাণ ঋণ"' in html
+    form.update(month="2", slip_id=str(mar))
+    post(c, "/admin/employees/1/manual", form)
+    with app.app_context():
+        months = [r[0] for r in get_db().execute("SELECT r.month FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                                                  "ORDER BY r.month")]
+        assert months == [2, 4]
+        assert get_db().execute("SELECT COUNT(*) FROM payroll_runs").fetchone()[0] == 2
+        sid = get_db().execute("SELECT id FROM payslips ORDER BY id LIMIT 1").fetchone()[0]
+    post(c, f"/admin/manual/{sid}/delete")
+    with app.app_context():
+        assert get_db().execute("SELECT COUNT(*) FROM payroll_runs").fetchone()[0] == 1
+
+
 def loads_(v):
     import json
     return json.loads(v)
@@ -511,4 +567,5 @@ if __name__ == "__main__":
     test_ids_separation_sheet_statement()
     test_old_database_is_upgraded()
     test_ncc_format_excel()
+    test_manual_past_month_entry()
     print("সব টেস্ট সফল")

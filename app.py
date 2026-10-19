@@ -261,7 +261,7 @@ def run_totals(kind=None):
         """SELECT r.*, COUNT(p.id) AS headcount, COALESCE(SUM(p.gross),0) AS gross,
                   COALESCE(SUM(p.total_deduction),0) AS deduction, COALESCE(SUM(p.net),0) AS net
            FROM payroll_runs r LEFT JOIN payslips p ON p.run_id = r.id
-           WHERE ? IS NULL OR r.kind = ?
+           WHERE (? IS NULL OR r.kind = ?) AND r.manual = 0
            GROUP BY r.id ORDER BY r.year, r.month, r.id""", (kind, kind)).fetchall()
 
 
@@ -463,7 +463,7 @@ def register_routes(app):
             "SELECT COALESCE(department, '—') AS department, COUNT(*) AS n FROM employees WHERE status = 'active' "
             "GROUP BY department ORDER BY n DESC").fetchall()
         today = date.today()
-        this_run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary'",
+        this_run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary' AND manual = 0",
                                 (today.year, today.month)).fetchone()
         changes = conn.execute(
             "SELECT c.*, e.name_bn, e.code FROM employee_changes c JOIN employees e ON e.id = c.employee_id "
@@ -552,6 +552,112 @@ def register_routes(app):
             data["id"] = emp_id
             return render_template("admin/employee_form.html", **employee_form_context(data))
         return render_template("admin/employee_form.html", **employee_form_context(emp))
+
+    @app.route("/admin/employees/<int:emp_id>/manual", methods=["GET", "POST"])
+    @admin_required
+    def manual_slip(emp_id):
+        """যে মাসের বেতন শিট সফটওয়্যারে নেই (সফটওয়্যার চালুর আগের মাস), সে মাসের বেতন হাতে এন্ট্রি।
+        চূড়ান্ত হিসেবে সংরক্ষিত হয়, তাই কর্মচারী নিজেও বেতন বিবরণীতে দেখতে পান; মাসিক তালিকা/রিপোর্টে আসে না।"""
+        conn = get_db()
+        emp = conn.execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        src = request.form if request.method == "POST" else request.args
+        year, month = to_int(src.get("year")), to_int(src.get("month"))
+        kind = src.get("kind") if src.get("kind") in RUN_KINDS else "salary"
+        title = (src.get("title") or "").strip() or (None if kind == "salary" else RUN_KINDS[kind])
+        valid = 2000 <= year <= 2100 and 1 <= month <= 12
+        if request.method == "POST":
+            if not valid:
+                flash("সঠিক মাস ও বছর দিন।", "error")
+                return redirect(url_for("manual_slip", emp_id=emp_id))
+            official = conn.execute(
+                "SELECT r.id FROM payroll_runs r JOIN payslips p ON p.run_id = r.id WHERE r.year = ? AND r.month = ? "
+                "AND r.kind = ? AND r.manual = 0 AND p.employee_id = ?", (year, month, kind, emp_id)).fetchone()
+            if official:
+                flash(f"{month_label(year, month)} এর {RUN_KINDS[kind]} সফটওয়্যারের শিটেই আছে — সেখান থেকে সংশোধন করুন।",
+                      "error")
+                return redirect(url_for("payroll_view", run_id=official["id"]))
+            s = {f: round(to_float(request.form.get(f)), 2) for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}
+            for part in ("other_allowance", "other_deduction"):
+                names, amounts = request.form.getlist(f"{part}_name"), request.form.getlist(f"{part}_amount")
+                s[part] = [{"name": n.strip(), "amount": round(to_float(a), 2)}
+                           for n, a in zip(names, amounts) if n.strip() and to_float(a)]
+            finalize_totals(s)
+            if not s["gross"]:
+                flash("কমপক্ষে একটি ভাতার টাকা দিন।", "error")
+                return redirect(url_for("manual_slip", emp_id=emp_id, year=year, month=month, kind=kind))
+            run = conn.execute("SELECT * FROM payroll_runs WHERE year = ? AND month = ? AND kind = ? AND manual = 1 "
+                               "AND COALESCE(title, '') = ?", (year, month, kind, title or "")).fetchone()
+            if run is None:
+                cur = conn.execute(
+                    "INSERT INTO payroll_runs (year, month, kind, title, status, manual, note, finalized_at) "
+                    "VALUES (?, ?, ?, ?, 'final', 1, 'পূর্ববর্তী মাস — হাতে এন্ট্রি', CURRENT_TIMESTAMP)",
+                    (year, month, kind, title))
+                run_id = cur.lastrowid
+            else:
+                run_id = run["id"]
+            # একই মাসের আগের এন্ট্রি (বা সংশোধনের সময় মাস বদলালে পুরনোটি) সরিয়ে নতুনটি
+            conn.execute("DELETE FROM payslips WHERE run_id = ? AND employee_id = ?", (run_id, emp_id))
+            old = conn.execute("SELECT p.id, p.run_id FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                               "WHERE p.id = ? AND p.employee_id = ? AND r.manual = 1",
+                               (to_int(request.form.get("slip_id")), emp_id)).fetchone()
+            if old:
+                conn.execute("DELETE FROM payslips WHERE id = ?", (old["id"],))
+                conn.execute("DELETE FROM payroll_runs WHERE id = ? AND NOT EXISTS (SELECT 1 FROM payslips WHERE run_id = ?)",
+                             (old["run_id"], old["run_id"]))
+            s.update(phase="হাতে এন্ট্রি", ref_basic=None)
+            insert_slip(run_id, emp, s)
+            conn.commit()
+            flash(f"{month_label(year, month)} — {title or RUN_KINDS[kind]}: {emp['name_bn']} এর বেতন সংরক্ষিত হয়েছে।", "ok")
+            return redirect(url_for("manual_slip", emp_id=emp_id))
+
+        # ফর্মে আগে থেকে বসানো মান: আগের এন্ট্রি সম্পাদনা, অথবা ক্যালকুলেটর থেকে হিসাব
+        slip, note = None, None
+        if src.get("slip"):
+            slip = conn.execute("SELECT p.*, r.year, r.month, r.kind, r.title FROM payslips p JOIN payroll_runs r "
+                                "ON r.id = p.run_id WHERE p.id = ? AND p.employee_id = ? AND r.manual = 1",
+                                (to_int(src.get("slip")), emp_id)).fetchone()
+            if slip:
+                year, month, kind, title = slip["year"], slip["month"], slip["kind"], slip["title"]
+        elif valid and kind == "salary" and src.get("calc"):
+            pseudo = {"id": 0, "year": year, "month": month, "kind": "salary", "include_festival": 0,
+                      "include_boishakhi": 0, "include_arrears": 0}
+            try:
+                calc = compute_components(emp, get_settings(), year, month, run=pseudo)
+            except Exception:
+                calc = None
+            if calc:
+                calc["other_deduction"] = [{"name": x["name"].split(" কিস্তি")[0], "amount": x["amount"]}
+                                           for x in calc["other_deduction"]]
+                slip = dict(calc, other_allowance=json.dumps(calc["other_allowance"], ensure_ascii=False),
+                            other_deduction=json.dumps(calc["other_deduction"], ensure_ascii=False))
+                note = "কর্মচারীর বর্তমান তথ্য ও বেতন স্কেল অনুযায়ী হিসাব বসানো হয়েছে — সে মাসের প্রকৃত বেতনের সাথে মিলিয়ে প্রয়োজনে সংশোধন করুন।"
+            else:
+                note = "কর্মচারীর গ্রেড/মূল বেতন অসম্পূর্ণ, তাই হিসাব বসানো যায়নি — টাকাগুলো হাতে লিখুন।"
+        if slip is None:
+            slip = {f: 0 for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}
+            slip.update(other_allowance="[]", other_deduction="[]")
+        entries = conn.execute(
+            "SELECT p.*, r.year, r.month, r.kind, r.title FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+            "WHERE p.employee_id = ? AND r.manual = 1 ORDER BY r.year DESC, r.month DESC, r.id DESC", (emp_id,)).fetchall()
+        today = date.today()
+        return render_template("admin/manual_slip.html", emp=emp, slip=slip, entries=entries, note=note,
+                               year=year if valid else today.year, month=month if valid else today.month,
+                               kind=kind, title=title or "", allowance_fields=ALLOWANCE_FIELDS,
+                               deduction_fields=DEDUCTION_FIELDS, run_kinds=RUN_KINDS,
+                               editing=slip["id"] if src.get("slip") and "id" in slip.keys() else None)
+
+    @app.route("/admin/manual/<int:slip_id>/delete", methods=["POST"])
+    @admin_required
+    def manual_slip_delete(slip_id):
+        conn = get_db()
+        slip = conn.execute("SELECT p.* FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                            "WHERE p.id = ? AND r.manual = 1", (slip_id,)).fetchone() or abort(404)
+        conn.execute("DELETE FROM payslips WHERE id = ?", (slip_id,))
+        conn.execute("DELETE FROM payroll_runs WHERE id = ? AND manual = 1 AND "
+                     "NOT EXISTS (SELECT 1 FROM payslips WHERE run_id = ?)", (slip["run_id"], slip["run_id"]))
+        conn.commit()
+        flash("এন্ট্রি মুছে ফেলা হয়েছে।", "ok")
+        return redirect(url_for("manual_slip", emp_id=slip["employee_id"]))
 
     @app.route("/admin/employees/<int:emp_id>")
     @admin_required
@@ -844,11 +950,19 @@ def register_routes(app):
             return redirect(url_for("payroll_list"))
         conn = get_db()
         if kind == "salary":
-            existing = conn.execute("SELECT id FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary'",
-                                    (year, month)).fetchone()
+            existing = conn.execute("SELECT id FROM payroll_runs WHERE year = ? AND month = ? AND kind = 'salary' "
+                                    "AND manual = 0", (year, month)).fetchone()
             if existing:
                 flash(f"{month_label(year, month)} এর বেতন শিট আগেই তৈরি হয়েছে।", "warn")
                 return redirect(url_for("payroll_view", run_id=existing["id"]))
+            manual = conn.execute("SELECT COUNT(*) FROM payslips p JOIN payroll_runs r ON r.id = p.run_id "
+                                  "WHERE r.year = ? AND r.month = ? AND r.kind = 'salary' AND r.manual = 1",
+                                  (year, month)).fetchone()[0]
+            if manual:
+                flash(f"{month_label(year, month)} এর বেতন {bn_num(manual)} জনের জন্য হাতে এন্ট্রি করা আছে "
+                      "(পূর্ববর্তী মাসের বেতন এন্ট্রি)। একই মাসের বেতন দুবার যেন না আসে, তাই আগে সেগুলো মুছে তারপর শিট তৈরি করুন।",
+                      "error")
+                return redirect(url_for("payroll_list"))
         if (kind == "arrears" or (kind == "salary" and f.get("arrears"))) and (prev := arrears_already_given()):
             flash(f"জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া আগেই {month_label(prev['year'], prev['month'])} এর শিটে দেওয়া হয়েছে। "
                   "দুবার দেওয়া যাবে না — আগের শিটটি মুছে তারপর নতুন করে দিন।", "error")
@@ -921,7 +1035,7 @@ def register_routes(app):
             (run_id,)).fetchall() if run["kind"] == "salary" else []
         prev = get_db().execute(
             "SELECT COALESCE(SUM(p.net),0) AS net FROM payroll_runs r JOIN payslips p ON p.run_id = r.id "
-            "WHERE r.kind = 'salary' AND r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
+            "WHERE r.kind = 'salary' AND r.manual = 0 AND r.year * 12 + r.month = ? ", (run["year"] * 12 + run["month"] - 1,)).fetchone()
         grouped = group_by_department(slips) if fs["group"] else [(None, slips)]
         groups = [(d, g, {f: round(sum(s[f] for s in g), 2) for f in ["gross", "total_deduction", "net"]})
                   for d, g in grouped]

@@ -138,7 +138,7 @@ def slip_for(emp, run, settings):
 def arrears_already_given(exclude_run_id=None):
     """জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া আগে কোনো শিটে দেওয়া হয়েছে কিনা (দুবার দেওয়া ঠেকাতে)।"""
     return get_db().execute(
-        "SELECT * FROM payroll_runs WHERE (kind = 'arrears' OR include_arrears = 1) AND id != ?",
+        "SELECT * FROM payroll_runs WHERE (kind = 'arrears' OR include_arrears = 1) AND manual = 0 AND id != ?",
         (exclude_run_id or 0,)).fetchone()
 
 

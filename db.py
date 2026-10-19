@@ -31,7 +31,8 @@ MIGRATIONS = {
         "phase": "TEXT", "ref_basic": "REAL",
     },
     "payroll_runs": {"include_arrears": "INTEGER NOT NULL DEFAULT 0", "kind": "TEXT NOT NULL DEFAULT 'salary'",
-                     "title": "TEXT", "religion": "TEXT", "multiplier": "REAL", "pct": "REAL", "amount": "REAL"},
+                     "title": "TEXT", "religion": "TEXT", "multiplier": "REAL", "pct": "REAL", "amount": "REAL",
+                     "manual": "INTEGER NOT NULL DEFAULT 0"},
     "users": {"must_change": "INTEGER NOT NULL DEFAULT 0"},
 }
 
