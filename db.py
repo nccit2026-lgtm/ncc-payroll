@@ -28,7 +28,7 @@ MIGRATIONS = {
     "payslips": {
         "mobile": "REAL NOT NULL DEFAULT 0", "wash": "REAL NOT NULL DEFAULT 0", "special": "REAL NOT NULL DEFAULT 0",
         "pf_office": "REAL NOT NULL DEFAULT 0", "pf_fund": "REAL NOT NULL DEFAULT 0", "pf_own": "REAL NOT NULL DEFAULT 0",
-        "phase": "TEXT", "ref_basic": "REAL",
+        "phase": "TEXT", "ref_basic": "REAL", "detail": "TEXT",
     },
     "payroll_runs": {"include_arrears": "INTEGER NOT NULL DEFAULT 0", "kind": "TEXT NOT NULL DEFAULT 'salary'",
                      "title": "TEXT", "religion": "TEXT", "multiplier": "REAL", "pct": "REAL", "amount": "REAL",

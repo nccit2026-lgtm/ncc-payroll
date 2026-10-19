@@ -71,7 +71,7 @@ def test_full_flow():
         e2 = get_db().execute("SELECT * FROM employees WHERE code = 'E2'").fetchone()
         assert (e2["inc_2026"], e2["inc_2027"], e2["tiffin"], e2["pf"]) == (0, 1, 1, 0)
 
-    # অক্টোবর ২০২৬ বেতন শিট, বকেয়াসহ (উৎসব ভাতা এখন আলাদা শিটে)
+    # অক্টোবর ২০২৬ বেতন শিট (বকেয়া ও উৎসব ভাতা আলাদা শিটে; পুরনো "arrears" অপশন এখন উপেক্ষিত)
     r = post(c, "/admin/payroll/new", {"year": "2026", "month": "10", "kind": "salary", "arrears": "1"},
              follow_redirects=True)
     html = r.get_data(as_text=True)
@@ -87,9 +87,35 @@ def test_full_flow():
         assert (s["basic"], s["house_rent"], s["medical"], s["education"], s["tiffin"], s["transport"],
                 s["festival"], s["pf_office"], s["special"]) == (28505, 8914.5, 1500, 1000, 200, 300, 0, 2850.5, 0)
         assert s["phase"] == "১ম কিস্তি"
-        gross = 28505 + 8914.5 + 1500 + 1000 + 200 + 300 + 2850.5 + a["total"] + a["pf_total"]
-        ded = 2850.5 * 2 + 1000 + 2 * a["pf_total"]
+        gross = 28505 + 8914.5 + 1500 + 1000 + 200 + 300 + 2850.5
+        ded = 2850.5 * 2 + 1000
         assert round(s["gross"], 2) == round(gross, 2) and round(s["net"], 2) == round(gross - ded, 2)
+
+    # বকেয়া: আলাদা শিট, ক্যালকুলেটরের মতো খাতওয়ারি; একবারই
+    assert "বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬) — একবারই" in c.get("/admin/payroll").get_data(as_text=True)
+    r = post(c, "/admin/payroll/new", {"kind": "arrears", "year": "2026", "month": "10"})
+    arr_id = int(re.search(r"/admin/payroll/(\d+)", r.headers["Location"]).group(1))
+    r = post(c, "/admin/payroll/new", {"kind": "arrears", "year": "2026", "month": "11"})
+    assert r.headers["Location"].endswith(f"/admin/payroll/{arr_id}")  # খসড়া থাকলে সেটাই খোলে
+    with app.app_context():
+        s = get_db().execute("SELECT * FROM payslips WHERE run_id = ? AND employee_id = ?", (arr_id, emp_id)).fetchone()
+        assert (s["basic"], s["house_rent"]) == (round(a["diff_basic"] * 3, 2), round(a["hr_adj"] * 3, 2))
+        assert s["pf_office"] == s["pf_fund"] == s["pf_own"] == a["pf_total"]
+        assert loads_(s["other_deduction"])[0]["amount"] == round(a["paid_special"] * 3, 2)
+        assert round(s["net"], 2) == a["net_total"] and loads_(s["detail"])["monthly"] == a["monthly"]
+    wb = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{arr_id}/excel").data))
+    assert wb.sheetnames == ["বকেয়া শিট", "ব্যাংক অ্যাডভাইস"]
+    heads = [cell.value for cell in wb["বকেয়া শিট"][5]]
+    assert "প্রাপ্য মূল বেতন (১ম কিস্তি)" in heads and "মহার্ঘ ভাতা সমন্বয় (−)" in heads
+    post(c, f"/admin/payroll/{arr_id}/finalize")
+    html = c.get("/admin/payroll").get_data(as_text=True)
+    assert "— একবারই" not in html and "চূড়ান্তভাবে দেওয়া হয়েছে" in html
+    r = post(c, "/admin/payroll/new", {"kind": "arrears", "year": "2026", "month": "12"}, follow_redirects=True)
+    assert "বকেয়া একবারই দেওয়া হয়" in r.get_data(as_text=True)
+    post(c, f"/admin/payroll/{arr_id}/reopen")
+    post(c, f"/admin/payroll/{arr_id}/delete")
+    with app.app_context():
+        assert get_db().execute("SELECT status FROM payroll_runs WHERE id = ?", (arr_id,)).fetchone()[0] == "final"
 
     r = c.get(f"/admin/payroll/{run_id}/excel?fmt=simple")
     wb = load_workbook(io.BytesIO(r.data))
@@ -111,7 +137,9 @@ def test_full_flow():
     assert emp_c.get("/me").headers["Location"].endswith("/password")
     post(emp_c, "/password", {"old": "E1", "new": "secret99", "confirm": "secret99"})
     html = emp_c.get("/me").get_data(as_text=True)
-    assert "এখনো কোনো বেতনের রেকর্ড নেই" in html and "মূল বেতন নির্ধারণ: ধাপে ধাপে" in html
+    # চূড়ান্ত বকেয়া শিট দেখা যায়, খসড়া অক্টোবরের বেতন শিট নয়
+    assert "বকেয়া" in html and "মূল বেতন নির্ধারণ: ধাপে ধাপে" in html
+    assert "২০,৫০০.৫০" not in html
     assert emp_c.get("/admin").status_code == 403
     assert emp_c.get(f"/admin/employees/{emp_id}/edit").status_code == 403
     assert emp_c.get("/me/profile/edit").status_code == 200
@@ -333,14 +361,11 @@ def test_bonus_religion_filters_font():
         assert [(x["name_bn"], x["festival"]) for x in puja] == [("প্রদীপ", 39620)]
         assert get_db().execute("SELECT COUNT(*) FROM payroll_runs WHERE year = 2026 AND month = 10").fetchone()[0] == 2
 
-    # বকেয়া আলাদা শিটে; দ্বিতীয়বার দেওয়া যাবে না
+    # বকেয়া আলাদা শিটে, খাতওয়ারি
     post(c, "/admin/payroll/new", {"kind": "arrears", "year": "2026", "month": "11"})
-    r = post(c, "/admin/payroll/new", {"kind": "salary", "year": "2026", "month": "11", "arrears": "1"}, follow_redirects=True)
-    assert "আগেই" in r.get_data(as_text=True)
     with app.app_context():
         arr = get_db().execute("SELECT p.* FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.kind = 'arrears'").fetchall()
-        assert len(arr) == 5 and all(x["basic"] == 0 and x["net"] > 0 for x in arr)
-        assert not get_db().execute("SELECT 1 FROM payroll_runs WHERE kind = 'salary' AND month = 11").fetchone()
+        assert len(arr) == 5 and all(x["basic"] > 0 and x["net"] > 0 and x["detail"] for x in arr)
 
     # অন্যান্য ভাতা: জনপ্রতি নির্দিষ্ট টাকা, ও নববর্ষ ভাতা
     post(c, "/admin/payroll/new", {"kind": "other", "year": "2027", "month": "4", "title": "ঝুঁকি ভাতা", "amount": "1500"})

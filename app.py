@@ -17,7 +17,7 @@ from bn import MONTHS_BN, bn_date, bn_num, bn_pct, bn_taka, month_label  # noqa:
 from db import close_db, get_db, get_settings, init_db, save_setting
 import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
-                     FESTIVAL_MULTIPLIER, RELIGIONS, RUN_KINDS, arrears_already_given, generate_run,
+                     FESTIVAL_MULTIPLIER, RELIGIONS, RUN_KINDS, arrears_already_given, arrears_final, generate_run,
                      LOAN_KINDS, SHORT_LABELS, group_by_department, insert_slip, loan_progress, record_loan_payments,
                      regenerate_slip, slip_for)
 
@@ -937,7 +937,8 @@ def register_routes(app):
     def payroll_list():
         runs = list(reversed(run_totals()))
         today = date.today()
-        return render_template("admin/payroll_list.html", runs=runs, today=today)
+        return render_template("admin/payroll_list.html", runs=runs, today=today, arrears_done=arrears_final(),
+                               arrears_draft=arrears_already_given())
 
     @app.route("/admin/payroll/new", methods=["POST"])
     @admin_required
@@ -963,10 +964,14 @@ def register_routes(app):
                       "(পূর্ববর্তী মাসের বেতন এন্ট্রি)। একই মাসের বেতন দুবার যেন না আসে, তাই আগে সেগুলো মুছে তারপর শিট তৈরি করুন।",
                       "error")
                 return redirect(url_for("payroll_list"))
-        if (kind == "arrears" or (kind == "salary" and f.get("arrears"))) and (prev := arrears_already_given()):
-            flash(f"জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া আগেই {month_label(prev['year'], prev['month'])} এর শিটে দেওয়া হয়েছে। "
-                  "দুবার দেওয়া যাবে না — আগের শিটটি মুছে তারপর নতুন করে দিন।", "error")
-            return redirect(url_for("payroll_list"))
+        # বকেয়া একবারই: চূড়ান্ত হয়ে গেলে আর নয়; খসড়া থাকলে সেটাই খোলে
+        if kind == "arrears" and (prev := arrears_already_given()):
+            if prev["status"] == "final":
+                flash(f"জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া {month_label(prev['year'], prev['month'])} এর শিটে চূড়ান্তভাবে দেওয়া হয়েছে। "
+                      "বকেয়া একবারই দেওয়া হয় — রেকর্ড শিটের তালিকায় আছে।", "error")
+                return redirect(url_for("payroll_list"))
+            flash("বকেয়ার খসড়া শিট আগেই তৈরি হয়েছে — সেটি যাচাই করে চূড়ান্ত করুন।", "warn")
+            return redirect(url_for("payroll_view", run_id=prev["id"]))
         opts = {"kind": kind, "title": (f.get("title") or "").strip() or None}
         if kind == "festival":
             religion = f.get("religion") if f.get("religion") in RELIGIONS else None
@@ -984,8 +989,7 @@ def register_routes(app):
             opts.update(pct=pct or None, amount=None if pct else amount)
         elif kind != "salary":
             opts["title"] = opts["title"] or RUN_KINDS[kind]
-        run_id, skipped = generate_run(year, month, False, False, f.get("note", "").strip(),
-                                       kind == "salary" and bool(f.get("arrears")), **opts)
+        run_id, skipped = generate_run(year, month, False, False, f.get("note", "").strip(), False, **opts)
         label = RUN_KINDS[kind] if kind == "salary" else opts["title"]
         n = conn.execute("SELECT COUNT(*) FROM payslips WHERE run_id = ?", (run_id,)).fetchone()[0]
         flash(f"{month_label(year, month)} — {label}: {bn_num(n)} জনের খসড়া শিট তৈরি হয়েছে। যাচাই করে 'চূড়ান্ত করুন' চাপুন।", "ok")
@@ -1049,6 +1053,10 @@ def register_routes(app):
         run = get_run_or_404(run_id)
         fs = filtered_slips(run_id, request.args)
         name = "salary-sheet" if run["kind"] == "salary" else run["kind"]
+        if run["kind"] == "arrears":
+            return xlsx_response(excel.arrears_workbook(run, fs["slips"], get_settings(), group=fs["group"],
+                                                        filter_label=fs["filter_label"]),
+                                 f"arrears-{run['year']}-{run['month']:02d}.xlsx")
         # বেতন শিট: নাসিকের নিজস্ব ফরম্যাট (অঞ্চল/শাখা, কর্তন সমূহ) — ?fmt=simple দিলে সাধারণ তালিকা
         if run["kind"] == "salary" and request.args.get("fmt") != "simple":
             return xlsx_response(excel.ncc_workbook(run, fs["slips"], get_settings(), filter_label=fs["filter_label"]),
@@ -1069,7 +1077,10 @@ def register_routes(app):
     @app.route("/admin/payroll/<int:run_id>/reopen", methods=["POST"])
     @admin_required
     def payroll_reopen(run_id):
-        get_run_or_404(run_id)
+        run = get_run_or_404(run_id)
+        if run["kind"] == "arrears" or run["include_arrears"]:
+            flash("বকেয়ার শিট একবার চূড়ান্ত হলে আর খসড়ায় ফেরত নেওয়া যায় না — এটি স্থায়ী রেকর্ড।", "error")
+            return redirect(url_for("payroll_view", run_id=run_id))
         get_db().execute("UPDATE payroll_runs SET status = 'draft', finalized_at = NULL WHERE id = ?", (run_id,))
         get_db().commit()
         flash("বেতন শিট আবার খসড়া অবস্থায় ফেরত গেছে।", "warn")

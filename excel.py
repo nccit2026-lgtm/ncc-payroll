@@ -116,6 +116,22 @@ def _save(wb):
     return buf
 
 
+def _bank_sheet(wb, slips, settings, title, hr=5):
+    bank = wb.create_sheet("ব্যাংক অ্যাডভাইস")
+    bh = ["ক্রম", "আইডি", "নাম", "পদবি", "হিসাব নং", "নিট প্রদেয় (টাকা)"]
+    _title(bank, settings, title, len(bh))
+    _header(bank, hr, bh)
+    for i, s in enumerate(slips, 1):
+        for col, v in enumerate([i, s["code"], s["name_bn"], s["designation"], s["account_no"], s["net"]], 1):
+            bank.cell(row=hr + i, column=col, value=v)
+    blast = hr + max(len(slips), 1)
+    _style_body(bank, hr + 1, blast, len(bh), 6)
+    _totals_row(bank, blast + 1, hr + 1, blast, 3, [6])
+    _signature(bank, blast + 5, len(bh), settings)
+    _widths(bank, [6, 11, 26, 22, 22, 18])
+    return bank
+
+
 def payroll_workbook(run, slips, settings, group=True, filter_label=""):
     wb = Workbook()
     ws = wb.active
@@ -195,19 +211,7 @@ def payroll_workbook(run, slips, settings, group=True, filter_label=""):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
-    # ব্যাংক অ্যাডভাইস
-    bank = wb.create_sheet("ব্যাংক অ্যাডভাইস")
-    bh = ["ক্রম", "আইডি", "নাম", "পদবি", "হিসাব নং", "নিট প্রদেয় (টাকা)"]
-    _title(bank, settings, f"ব্যাংক অ্যাডভাইস — {period}" + ("" if salary else f" ({run['title']})"), len(bh))
-    _header(bank, hr, bh)
-    for i, s in enumerate(slips, 1):
-        for col, v in enumerate([i, s["code"], s["name_bn"], s["designation"], s["account_no"], s["net"]], 1):
-            bank.cell(row=hr + i, column=col, value=v)
-    blast = hr + max(len(slips), 1)
-    _style_body(bank, hr + 1, blast, len(bh), 6)
-    _totals_row(bank, blast + 1, hr + 1, blast, 3, [6])
-    _signature(bank, blast + 5, len(bh), settings)
-    _widths(bank, [6, 11, 26, 22, 22, 18])
+    _bank_sheet(wb, slips, settings, f"ব্যাংক অ্যাডভাইস — {period}" + ("" if salary else f" ({run['title']})"))
 
     # শাখাভিত্তিক সারাংশ
     summary = wb.create_sheet("শাখাভিত্তিক সারাংশ")
@@ -738,4 +742,93 @@ def ncc_workbook(run, slips, settings, filter_label=""):
     note.sheet_properties.pageSetUpPr.fitToPage = True
     note.page_setup.fitToWidth = 1
     note.page_setup.fitToHeight = 0
+    return _save(wb)
+
+
+# ---------------------------------------------------------------------------
+# বকেয়া শিট (জুলাই–সেপ্টেম্বর ২০২৬) — ক্যালকুলেটরের মতো খাতওয়ারি হিসাব
+# ---------------------------------------------------------------------------
+ARREARS_MONTHLY = [("paid_basic", "পরিশোধিত মূল বেতন (২০১৫ স্কেল)"), ("due_basic", "প্রাপ্য মূল বেতন (১ম কিস্তি)"),
+                   ("diff_basic", "মূল বেতনের পার্থক্য"), ("due_hr", "প্রাপ্য বাড়িভাড়া"), ("paid_hr", "পরিশোধিত বাড়িভাড়া"),
+                   ("hr_adj", "বাড়িভাড়ার পার্থক্য"), ("paid_special", "মহার্ঘ ভাতা (বাদ)"), ("monthly", "মাসিক বকেয়া")]
+
+
+def arrears_workbook(run, slips, settings, group=True, filter_label=""):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "বকেয়া শিট"
+    period = f"{MONTHS_BN[run['month']]} {bn_num(run['year'])}"
+    name = run["title"] or "বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬)"
+    if "জুলাই" not in name:
+        name += " (জুলাই–সেপ্টেম্বর ২০২৬)"
+    title = f"{name} — প্রদানের মাস: {period}" + (f" ({filter_label})" if filter_label else "")
+    has_other = any(_items_of(s["other_allowance"]) for s in slips)
+    info = ["ক্রম", "আইডি", "নাম", "পদবি", "গ্রেড"]
+    monthly = [h for _, h in ARREARS_MONTHLY]
+    totals = (["মাস", "মূল বেতনের বকেয়া", "বাড়িভাড়ার বকেয়া"] + (["অন্যান্য"] if has_other else [])
+              + ["মহার্ঘ ভাতা সমন্বয় (−)", "মোট বকেয়া", "বকেয়ার উপর অফিস প্রদত্ত PF", "PF কর্তন (অফিস + নিজ)", "নীট প্রদেয়"])
+    n = len(info) + len(monthly) + len(totals)
+    _title(ws, settings, title, n)
+    hr = 5
+    # উপরে দলের নাম: মাসিক হিসাব / ৩ মাসের মোট
+    m0, t0 = len(info) + 1, len(info) + len(monthly) + 1
+    ws.merge_cells(start_row=hr - 1, start_column=m0, end_row=hr - 1, end_column=t0 - 1)
+    _cell(ws, hr - 1, m0, "মাসিক হিসাব (প্রতি মাস)", bold=True, align="center", fill=DEPT_FILL)
+    ws.merge_cells(start_row=hr - 1, start_column=t0, end_row=hr - 1, end_column=n)
+    _cell(ws, hr - 1, t0, "জুলাই–সেপ্টেম্বর ২০২৬ (৩ মাস) এর মোট", bold=True, align="center", fill=TOTAL_FILL)
+    _header(ws, hr, info + monthly + totals)
+    ws.row_dimensions[hr].height = 48
+
+    r, subtotal_rows = hr, []
+    money_from = len(info) + 1
+    for dept, members in (group_by_department(slips) if group else [(None, slips)]):
+        if dept is not None:
+            r += 1
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+            c = ws.cell(row=r, column=1, value=f"{dept}  ({bn_num(len(members))} জন)")
+            c.font = Font(name=FONT, bold=True, size=12, color="1F5F4A")
+            c.fill = DEPT_FILL
+            c.border = BORDER
+        first = r + 1
+        for i, s in enumerate(members, 1):
+            r += 1
+            d = json.loads(s["detail"]) if s["detail"] else {}
+            special = round(sum(float(x["amount"]) for x in _items_of(s["other_deduction"])), 2)
+            other = round(sum(float(x["amount"]) for x in _items_of(s["other_allowance"])), 2)
+            vals = ([i, s["code"], s["name_bn"], s["designation"], s["grade"]] + [d.get(k) for k, _ in ARREARS_MONTHLY]
+                    + [d.get("months", 3), s["basic"], s["house_rent"]] + ([other] if has_other else [])
+                    + [special, round(s["basic"] + s["house_rent"] + other - special, 2), s["pf_office"],
+                       round(s["pf_fund"] + s["pf_own"], 2), s["net"]])
+            for col, v in enumerate(vals, 1):
+                ws.cell(row=r, column=col, value=v)
+        _style_body(ws, first, r, n, money_from)
+        for rr in range(first, r + 1):
+            ws.cell(row=rr, column=t0).number_format = BN_INT
+        r += 1
+        # উপমোটে শুধু ৩ মাসের অঙ্ক (মাসিক হিসাবের কলাম প্রত্যেকের নিজস্ব হার, যোগ করা হয় না)
+        _totals_row(ws, r, first, r - 1, 3, range(t0 + 1, n + 1), label="উপমোট" if dept is not None else "মোট", ncols=n)
+        subtotal_rows.append(r)
+        r += 1
+    r += 1
+    ws.cell(row=r, column=3, value=f"সর্বমোট ({bn_num(len(slips))} জন)").font = Font(name=FONT, bold=True, size=12)
+    for col in range(1, n + 1):
+        cell = ws.cell(row=r, column=col)
+        cell.fill = GRAND_FILL
+        cell.border = BORDER
+        if col > t0 and subtotal_rows:
+            L = get_column_letter(col)
+            cell.value = "=" + "+".join(f"{L}{x}" for x in subtotal_rows)
+            cell.font = Font(name=FONT, bold=True, size=12)
+            cell.number_format = MONEY_PAISA if any(_paisa(float(s[k])) for s in slips
+                                                    for k in ("basic", "house_rent", "net", "pf_office")) else MONEY
+    _signature(ws, r + 4, n, settings)
+    ws.freeze_panes = f"D{hr + 1}"
+    _widths(ws, [6, 11, 24, 20, 7] + [12] * len(monthly) + [6] + [13] * (len(totals) - 1))
+    ws.print_title_rows = f"{hr}:{hr}"
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_LEGAL
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    _bank_sheet(wb, slips, settings, f"ব্যাংক অ্যাডভাইস — {name} ({period})")
     return _save(wb)

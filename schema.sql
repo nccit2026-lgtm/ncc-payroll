@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS payslips (
     pf_own          REAL NOT NULL DEFAULT 0,
     phase           TEXT,
     ref_basic       REAL,                           -- বোনাস/ভাতার শিটে হিসাবের ভিত্তি মূল বেতন
+    detail          TEXT,                           -- বকেয়া শিট: মাসিক হিসাবের বিবরণ (JSON)
     other_allowance TEXT NOT NULL DEFAULT '[]',     -- JSON [{name, amount}]
     gpf             INTEGER NOT NULL DEFAULT 0,
     revenue_stamp   INTEGER NOT NULL DEFAULT 0,

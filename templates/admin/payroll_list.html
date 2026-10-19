@@ -14,7 +14,6 @@
       <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
       <div class="field" style="width:100px"><label>বছর</label><input name="year" value="{{ today.year }}" inputmode="numeric"></div>
     </div>
-    <label class="check" style="margin:10px 0"><input type="checkbox" name="arrears" value="1"> এই শিটেই জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া যুক্ত করুন</label>
     <div class="field"><label>মন্তব্য (ঐচ্ছিক)</label><input name="note"></div>
     <button class="primary" type="submit">বেতন শিট তৈরি করুন</button>
   </form>
@@ -27,7 +26,7 @@
         <select name="kind" id="kind">
           <option value="festival">উৎসব ভাতা (ধর্ম অনুযায়ী)</option>
           <option value="boishakhi">বাংলা নববর্ষ ভাতা (সবাই, মূল বেতনের {{ settings.boishakhi_pct|pct }}%)</option>
-          <option value="arrears">বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬)</option>
+          {% if not arrears_done %}<option value="arrears">বকেয়া (জুলাই–সেপ্টেম্বর ২০২৬) — একবারই</option>{% endif %}
           <option value="other">অন্যান্য ভাতা</option>
         </select></div>
       <div class="field"><label>মাস</label><select name="month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select></div>
@@ -38,6 +37,9 @@
       <div class="field" style="width:150px"><label>মূল বেতনের কত গুণ</label><input name="multiplier" id="mult" value="1" inputmode="decimal"></div>
       <div class="hint" style="flex-basis:100%">ঈদ (ইসলাম) = এক মূল বেতন; হিন্দু, বৌদ্ধ, খ্রিস্টান = দুই মূল বেতন। শুধু নির্বাচিত ধর্মের কর্মচারীরা পাবেন। ডিসেম্বর ২০২৭ পর্যন্ত ৩০-০৬-২০২৬ এর মূল বেতন ধরে, জানুয়ারি ২০২৮ থেকে নতুন মূল বেতন ধরে।</div>
     </div>
+    <div class="hint" data-for="arrears" style="margin-top:10px">ক্যালকুলেটরের নিয়মে প্রত্যেকের খাতওয়ারি হিসাব: (প্রাপ্য ১ম কিস্তির মূল বেতন − পরিশোধিত মূল বেতন) + বাড়িভাড়ার পার্থক্য − মহার্ঘ ভাতা, × ৩ মাস; PF প্রযোজ্য হলে বকেয়ার উপর PF।
+      এটি একবারই দেওয়া হয় — শিট চূড়ান্ত করার পর এই অপশন আর আসবে না, খসড়ায় ফেরতও নেওয়া যাবে না; শিটটি রেকর্ড হিসেবে তালিকায় থেকে যাবে।
+      {% if arrears_draft %}<br><b>খসড়া বকেয়া শিট আছে:</b> <a href="{{ url_for('payroll_view', run_id=arrears_draft.id) }}">{{ month_label(arrears_draft.year, arrears_draft.month) }} — খুলুন</a>{% endif %}</div>
     <div class="inline-form" data-for="other" style="margin-top:10px">
       <div class="field"><label>মূল বেতনের %</label><input name="pct" inputmode="decimal" style="width:120px"></div>
       <div class="field"><label>অথবা জনপ্রতি টাকা</label><input name="amount" inputmode="decimal" style="width:140px"></div>
@@ -48,6 +50,7 @@
   </form>
 </div>
 
+{% if arrears_done %}<p class="flash ok">জুলাই–সেপ্টেম্বর ২০২৬ এর বকেয়া {{ month_label(arrears_done.year, arrears_done.month) }} এর শিটে চূড়ান্তভাবে দেওয়া হয়েছে — <a href="{{ url_for('payroll_view', run_id=arrears_done.id) }}">রেকর্ড দেখুন</a>।</p>{% endif %}
 <div class="table-wrap">
 <table>
   <thead><tr><th>মাস</th><th>শিট</th><th>অবস্থা</th><th class="num">কর্মচারী</th><th class="num">মোট</th><th class="num">মোট কর্তন</th><th class="num">নিট প্রদান</th><th>মন্তব্য</th><th></th></tr></thead>

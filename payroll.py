@@ -33,6 +33,7 @@ SHORT_LABELS = {"basic": "মূল বেতন", "house_rent": "বাড়�
                 "pf_office": "অফিস PF", "festival": "উৎসব", "boishakhi": "নববর্ষ"}
 
 ARREARS_LABEL = "বকেয়া: জুলাই–সেপ্টেম্বর ২০২৬"
+ARREARS_SPECIAL_LABEL = "মহার্ঘ ভাতা সমন্বয় (জুলাই–সেপ্টেম্বর ২০২৬)"
 
 RELIGIONS = ["ইসলাম", "হিন্দু", "বৌদ্ধ", "খ্রিস্টান", "অন্যান্য"]
 # বেতন ছাড়া আলাদা শিটের ধরন
@@ -110,16 +111,18 @@ def compute_extra(emp, run, settings):
     elif kind == "boishakhi":
         slip["boishakhi"] = r2(base * float(settings["boishakhi_pct"]) / 100)
     elif kind == "arrears":
+        # ক্যালকুলেটরের মতো খাতওয়ারি: (মূল বেতনের পার্থক্য + বাড়িভাড়ার পার্থক্য − মহার্ঘ ভাতা) × ৩ মাস
         a = arrears(emp)
         if not a or not a["total"]:
             return None, ""
-        if a["total"] > 0:
-            slip["other_allowance"].append({"name": ARREARS_LABEL, "amount": a["total"]})
-        else:
-            slip["other_deduction"].append({"name": ARREARS_LABEL + " (সমন্বয়)", "amount": -a["total"]})
-        if a["pf_total"]:
-            slip["other_allowance"].append({"name": "বকেয়ার উপর অফিস প্রদত্ত PF", "amount": a["pf_total"]})
-            slip["other_deduction"].append({"name": "বকেয়ার উপর PF (অফিস + নিজ অংশ)", "amount": r2(2 * a["pf_total"])})
+        n = a["months"]
+        slip["ref_basic"] = a["due_basic"]
+        slip["basic"] = r2(a["diff_basic"] * n)
+        slip["house_rent"] = r2(a["hr_adj"] * n)
+        if a["paid_special"]:
+            slip["other_deduction"].append({"name": ARREARS_SPECIAL_LABEL, "amount": r2(a["paid_special"] * n)})
+        slip["pf_office"] = slip["pf_fund"] = slip["pf_own"] = a["pf_total"]
+        slip["detail"] = json.dumps(a, ensure_ascii=False)
     elif kind == "other":
         amt = r2(base * float(run["pct"]) / 100) if run["pct"] else r2(float(run["amount"] or 0))
         slip["other_allowance"].append({"name": run["title"] or "ভাতা", "amount": amt})
@@ -133,6 +136,13 @@ def slip_for(emp, run, settings):
                                run["include_boishakhi"], run["include_arrears"], run=run)
         return (s, None) if s else (None, "গ্রেড/মূল বেতন অসম্পূর্ণ")
     return compute_extra(emp, run, settings)
+
+
+def arrears_final():
+    """চূড়ান্ত বকেয়া শিট (একবারই দেওয়া হয়; চূড়ান্ত হলে আর নতুন করে তৈরি/খসড়ায় ফেরত নয়)।"""
+    return get_db().execute(
+        "SELECT * FROM payroll_runs WHERE (kind = 'arrears' OR include_arrears = 1) AND manual = 0 AND status = 'final' "
+        "ORDER BY id LIMIT 1").fetchone()
 
 
 def arrears_already_given(exclude_run_id=None):
@@ -178,7 +188,7 @@ def generate_run(year, month, include_festival, include_boishakhi, note="", incl
     return run["id"], skipped
 
 
-SLIP_COLUMNS = ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net", "phase", "ref_basic"]
+SLIP_COLUMNS = ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net", "phase", "ref_basic", "detail"]
 
 
 def insert_slip(run_id, emp, s):
