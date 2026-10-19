@@ -7,7 +7,12 @@
   <div><h1>{{ 'বেতন শিট' if salary else run.title }} — {{ month_label(run.year, run.month) }} {{ status_badge(run.status) }}</h1>
     <div class="muted">{{ slips|length|bn }} জন কর্মচারী{% if fs.filter_label %} (ফিল্টার: {{ fs.filter_label }}){% endif %}{% if run.religion %} · শুধু {{ run.religion }} ধর্মাবলম্বী, মূল বেতনের {{ run.multiplier|pct }} গুণ{% endif %}{% if run.note %} · {{ run.note }}{% endif %}</div></div>
   <div class="actions">
+    {% if run.kind == 'salary' %}
+    <a class="btn primary" href="{{ url_for('payroll_excel', run_id=run.id) }}{{ '?' ~ query if query }}" title="নাসিকের বেতন শিটের ফরম্যাট: সারসংক্ষেপ নোট, সারাংশ, অঞ্চল ও শাখাভিত্তিক বিস্তারিত (কর্তন সমূহসহ)">Excel — নাসিক ফরম্যাট{{ ' (ফিল্টারসহ)' if fs.filter_label }}</a>
+    <a class="btn" href="{{ url_for('payroll_excel', run_id=run.id) }}?fmt=simple{{ '&' ~ query if query }}">Excel — সাধারণ তালিকা</a>
+    {% else %}
     <a class="btn primary" href="{{ url_for('payroll_excel', run_id=run.id) }}{{ '?' ~ query if query }}">Excel ডাউনলোড{{ ' (ফিল্টারসহ)' if fs.filter_label }}</a>
+    {% endif %}
     {% if draft %}
       <form class="inline" method="post" action="{{ url_for('payroll_recalc', run_id=run.id) }}" onsubmit="return confirm('সকলের হাতে করা সংশোধন মুছে বর্তমান তথ্য অনুযায়ী আবার হিসাব হবে। চালিয়ে যাবেন?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button>সবার পুনঃহিসাব</button></form>
       <form class="inline" method="post" action="{{ url_for('payroll_finalize', run_id=run.id) }}" onsubmit="return confirm('চূড়ান্ত করলে কর্মচারীরা বেতন বিবরণী দেখতে পাবেন এবং শিট লক হয়ে যাবে।')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="primary">চূড়ান্ত করুন</button></form>

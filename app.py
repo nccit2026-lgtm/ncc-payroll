@@ -935,9 +935,13 @@ def register_routes(app):
         run = get_run_or_404(run_id)
         fs = filtered_slips(run_id, request.args)
         name = "salary-sheet" if run["kind"] == "salary" else run["kind"]
+        # বেতন শিট: নাসিকের নিজস্ব ফরম্যাট (অঞ্চল/শাখা, কর্তন সমূহ) — ?fmt=simple দিলে সাধারণ তালিকা
+        if run["kind"] == "salary" and request.args.get("fmt") != "simple":
+            return xlsx_response(excel.ncc_workbook(run, fs["slips"], get_settings(), filter_label=fs["filter_label"]),
+                                 f"{name}-{run['year']}-{run['month']:02d}.xlsx")
         return xlsx_response(excel.payroll_workbook(run, fs["slips"], get_settings(), group=fs["group"],
                                                     filter_label=fs["filter_label"]),
-                             f"{name}-{run['year']}-{run['month']:02d}.xlsx")
+                             f"{name}-{run['year']}-{run['month']:02d}{'-list' if run['kind'] == 'salary' else ''}.xlsx")
 
     @app.route("/admin/payroll/<int:run_id>/finalize", methods=["POST"])
     @admin_required

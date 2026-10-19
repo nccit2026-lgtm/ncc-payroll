@@ -91,7 +91,7 @@ def test_full_flow():
         ded = 2850.5 * 2 + 1000 + 2 * a["pf_total"]
         assert round(s["gross"], 2) == round(gross, 2) and round(s["net"], 2) == round(gross - ded, 2)
 
-    r = c.get(f"/admin/payroll/{run_id}/excel")
+    r = c.get(f"/admin/payroll/{run_id}/excel?fmt=simple")
     wb = load_workbook(io.BytesIO(r.data))
     assert wb.sheetnames == ["বেতন শিট", "ব্যাংক অ্যাডভাইস", "শাখাভিত্তিক সারাংশ"]
     assert "PF (নিজ অংশ)" in [cell.value for cell in wb["বেতন শিট"][5]]
@@ -229,7 +229,7 @@ def test_ids_separation_sheet_statement():
 
     # শাখাভিত্তিক Excel: শাখার নাম, উপমোট, সর্বমোট, সইয়ের ঘর
     post(c, "/admin/payroll/new", {"year": "2026", "month": "11"})
-    ws = load_workbook(io.BytesIO(c.get("/admin/payroll/1/excel").data))["বেতন শিট"]
+    ws = load_workbook(io.BytesIO(c.get("/admin/payroll/1/excel?fmt=simple").data))["বেতন শিট"]
     col_a = [ws.cell(r, 1).value for r in range(1, ws.max_row + 1)]
     col_c = [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)]
     assert "সাধারণ শাখা  (৩ জন)" in col_a and "হিসাব বিভাগ  (২ জন)" in col_a
@@ -364,11 +364,11 @@ def test_bonus_religion_filters_font():
     html = c.get(q).get_data(as_text=True)
     assert "সুমন" in html and "অজানা" in html and "রহিম" not in html and "প্রদীপ" not in html
     assert "উপমোট" not in html and "ফিল্টার: শাখা: সাধারণ শাখা; গ্রেড: ১৬" in html
-    ws = load_workbook(io.BytesIO(c.get(q.replace(f"/{salary_run}?", f"/{salary_run}/excel?")).data)).active
+    ws = load_workbook(io.BytesIO(c.get(q.replace(f"/{salary_run}?", f"/{salary_run}/excel?fmt=simple&")).data)).active
     names = [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)]
     assert "সুমন" in names and "অজানা" in names and "রহিম" not in names and "উপমোট" not in names
     assert "সাধারণ শাখা" in ws.cell(3, 1).value
-    ws = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{salary_run}/excel?sort=grade").data)).active
+    ws = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{salary_run}/excel?fmt=simple&sort=grade").data)).active
     assert [ws.cell(r, 3).value for r in range(1, ws.max_row + 1)].count("উপমোট") == 2
 
     # একসাথে ধর্ম সেট
@@ -454,6 +454,51 @@ def test_loans_items_import():
         assert get_db().execute("SELECT COUNT(*) FROM loans WHERE employee_id = 2").fetchone()[0] == 2
 
 
+def test_ncc_format_excel():
+    """নাসিক ফরম্যাট: সচিব আলাদা, অঞ্চলভিত্তিক শাখা, কর্তন সমূহ কলামে ঋণ/আয়কর/বাসা ভাড়া, বাংলা অঙ্ক ও Nikosh ফন্ট।"""
+    db = os.path.join(tempfile.mkdtemp(), "n.db")
+    app = create_app(db)
+    c = app.test_client()
+    post(c, "/login", {"username": "admin", "password": "admin123"})
+    post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"})
+    wb = load_workbook(io.BytesIO(c.get("/admin/employees/template.xlsx").data))
+    ws = wb.active
+    col = {f: i + 1 for i, f in enumerate(COLS)}
+    rows = [{"code": "N1", "name_bn": "সচিব সাহেব", "designation": "সচিব", "department": "সাধারণ শাখা", "grade": 5,
+             "basic": 66840, "ovr_mobile": 1500, "allow_items": "ইন্টারনেট ও টেলিফোন ভাতা=2300; গাড়ি রক্ষণাবেক্ষণ ভাতা=25000"},
+            {"code": "N2", "name_bn": "করিম", "designation": "অফিস সহায়ক", "department": "সাধারণ শাখা", "grade": 20,
+             "basic": 9700, "pf": "হ্যাঁ", "ded_items": "আয়কর=500; বাসা ভাড়া কর্তন=6000; বিভিন্ন কর্তন=100",
+             "loan0_inst": 2500, "loan1_inst": 1000, "loan2_inst": 800},
+            {"code": "N3", "name_bn": "রহিম", "designation": "পরিচ্ছন্নতা পরিদর্শক", "grade": 16, "basic": 9700,
+             "department": "বর্জ্য ব্যবস্থাপনা বিভাগ (সিদ্ধিরগঞ্জ অঞ্চল)"}]
+    for i, row in enumerate(rows, 2):
+        for k in COLS:
+            ws.cell(i, col[k], row.get(k))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    post(c, "/admin/employees/import", {"file": (buf, "e.xlsx")}, content_type="multipart/form-data")
+    r = post(c, "/admin/payroll/new", {"year": "2026", "month": "10", "kind": "salary"})
+    run_id = int(re.search(r"/admin/payroll/(\d+)", r.headers["Location"]).group(1))
+    assert "নাসিক ফরম্যাট" in c.get(f"/admin/payroll/{run_id}").get_data(as_text=True)
+    wb = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{run_id}/excel").data))
+    assert wb.sheetnames == ["সারসংক্ষেপ নোট", "সারাংশ", "বিস্তারিত"]
+    det = wb["বিস্তারিত"]
+    cells = {cell.value: cell for row in det.iter_rows() for cell in row if isinstance(cell.value, str)}
+    assert "নারায়ণগঞ্জ অঞ্চল" in cells and "সিদ্ধিরগঞ্জ অঞ্চল" in cells and "কদমরসূল অঞ্চল" not in cells
+    assert cells["সচিব"].font.name == "Nikosh"
+    sec = cells["সচিব"].row
+    assert [det.cell(sec, k).value for k in (8, 9, 10)] == [1500, 2300, 25000]  # মোবাইল, ইন্টারনেট, গাড়ী
+    karim = cells["করিম"].row
+    # গৃহ ঋণ, অন্যান্য ঋণ, বাসা ভাড়া, বিভিন্ন, আয়কর, PF অফিস, PF নিজ, ভবিষ্য অগ্রিম
+    vals = [det.cell(karim, k).value for k in range(14, 22)]
+    assert vals[:5] == [2500, 800, 6000, 100, 500] and vals[5] == vals[6] and vals[5] > 0 and vals[7] == 1000
+    assert "[$-5000445]" in det.cell(karim, 4).number_format  # বাংলা অঙ্ক
+    assert det.cell(karim, 23).value == f"=M{karim}-V{karim}"
+    simple = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{run_id}/excel?fmt=simple").data))
+    assert simple.sheetnames[0] == "বেতন শিট"
+
+
 def loads_(v):
     import json
     return json.loads(v)
@@ -465,4 +510,5 @@ if __name__ == "__main__":
     test_bonus_religion_filters_font()
     test_ids_separation_sheet_statement()
     test_old_database_is_upgraded()
+    test_ncc_format_excel()
     print("সব টেস্ট সফল")
