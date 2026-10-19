@@ -216,3 +216,8 @@ table.st th { position: static; }
 .loan-form label { display: flex; flex-direction: column; gap: 3px; font-size: .82rem; }
 tr.loan-edit td { padding-top: 0; border-top: 0; background: #fbfcfc; }
 tr.loan-edit summary { color: var(--brand); padding: 4px 0; }
+.statement.wide { max-width: 1180px; }
+table.st.wide th, table.st.wide td { font-size: .78rem; padding: 6px 4px; }
+table.st.wide th { white-space: normal; vertical-align: bottom; }
+.st-filter .chips .check { margin-right: 10px; }
+.chips .check { white-space: nowrap; }

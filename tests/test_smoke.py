@@ -266,15 +266,33 @@ def test_ids_separation_sheet_statement():
 
     # ব্যক্তির বেতন বিবরণী: মাস থেকে মাস; কর্মচারী শুধু চূড়ান্ত ও নিজেরটা
     html = c.get("/statement/2?from=2026-11&to=2026-11").get_data(as_text=True)
-    assert "নভেম্বর ২০২৬ — নভেম্বর ২০২৬" in html and "মোঃ করিম" in html and "মোট (১ মাস)" in html
-    assert "মোট (২ মাস)" in c.get("/statement/2?from=2026-1&to=2026-12").get_data(as_text=True)
+    assert "নভেম্বর ২০২৬ — নভেম্বর ২০২৬" in html and "মোঃ করিম" in html and "মোট (১টি)" in html
+    assert "মোট (২টি)" in c.get("/statement/2?from=2026-1&to=2026-12").get_data(as_text=True)
     me = app.test_client()
     post(me, "/login", {"username": "NCC-0002", "password": "NCC-0002"})
     post(me, "/password", {"old": "NCC-0002", "new": "pass1234", "confirm": "pass1234"})
     assert "কোনো চূড়ান্ত বেতনের রেকর্ড নেই" in me.get("/me/statement").get_data(as_text=True)
     post(c, "/admin/payroll/1/finalize")
-    assert "মোট (১ মাস)" in me.get("/me/statement").get_data(as_text=True)
+    assert "মোট (১টি)" in me.get("/me/statement").get_data(as_text=True)
     assert me.get("/statement/3").status_code == 403
+
+    # ফিল্টার: শিটের ধরন, বিস্তারিত কলাম, কর্মচারী বাছাইয়ের পাতা
+    post(c, "/admin/payroll/new", {"kind": "festival", "year": "2026", "month": "11", "religion": "ইসলাম", "multiplier": "1"})
+    with app.app_context():
+        get_db().execute("UPDATE employees SET religion = 'ইসলাম' WHERE id = 2")
+        get_db().commit()
+    post(c, "/admin/payroll/new", {"kind": "festival", "year": "2026", "month": "12", "religion": "ইসলাম", "multiplier": "1"})
+    both = c.get("/statement/2?from=2026-11&to=2026-12").get_data(as_text=True)
+    only_salary = c.get("/statement/2?from=2026-11&to=2026-12&kind=salary").get_data(as_text=True)
+    only_bonus = c.get("/statement/2?from=2026-11&to=2026-12&kind=festival").get_data(as_text=True)
+    assert "মোট (৩টি)" in both and "উৎসব ভাতা (ইসলাম)" in both
+    assert "মোট (২টি)" in only_salary and "উৎসব ভাতা (ইসলাম)" not in only_salary.split('id="doc"')[1]
+    assert "মোট (১টি)" in only_bonus and "অন্তর্ভুক্ত: উৎসব ভাতা" in only_bonus
+    detail = c.get("/statement/2?from=2026-11&to=2026-12&kind=salary&detail=1").get_data(as_text=True)
+    assert "ঋণ কিস্তি</th>" in detail and "টিফিন</th>" in detail and "table class=\"st wide\"" in detail
+    assert c.get("/admin/statements").status_code == 200
+    r = c.get("/admin/statements?emp=2&from=2026-11&to=2026-12&kind=salary&detail=1")
+    assert r.status_code == 302 and "/statement/2?" in r.headers["Location"] and "detail=1" in r.headers["Location"]
 
 
 def test_bonus_religion_filters_font():

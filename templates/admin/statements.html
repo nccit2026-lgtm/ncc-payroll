@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}বেতন বিবরণী{% endblock %}
+{% block content %}
+<div class="topbar"><div><h1>বেতন বিবরণী তৈরি</h1><div class="muted">যেকোনো কর্মচারীর, পছন্দমতো মাস ও শিট বেছে — PDF ডাউনলোড ও প্রিন্টসহ</div></div></div>
+{% macro ym(prefix, m, y) %}
+  <select name="{{ prefix }}_m" aria-label="মাস">{% for i in range(1, 13) %}<option value="{{ i }}" {{ 'selected' if i == m }}>{{ MONTHS_BN[i] }}</option>{% endfor %}</select>
+  <select name="{{ prefix }}_y" aria-label="বছর">{% for yy in years %}<option value="{{ yy }}" {{ 'selected' if yy == y }}>{{ yy|bn }}</option>{% endfor %}</select>
+{% endmacro %}
+<form class="card" method="get" id="pick" style="max-width:900px">
+  <div class="grid g2">
+    <div class="field"><label>শাখা</label>
+      <select id="dept"><option value="">সব শাখা</option>{% for d in depts %}<option>{{ d }}</option>{% endfor %}</select></div>
+    <div class="field"><label>খুঁজুন (নাম বা আইডি)</label><input id="q" placeholder="যেমন: NCC-0004 অথবা দিলীপ"></div>
+  </div>
+  <div class="field"><label>কর্মচারী *</label>
+    <select name="emp" id="emp" required size="8">
+      {% for e in employees %}<option value="{{ e.id }}" data-dept="{{ e.department or '' }}">{{ e.code }} — {{ e.name_bn }}{{ ' · ' ~ e.designation if e.designation }}{{ ' (নিষ্ক্রিয়)' if e.status != 'active' }}</option>{% endfor %}
+    </select>
+    <div class="hint" id="count"></div></div>
+  <div class="inline-form">
+    <div class="field"><label>যে মাস থেকে</label><div class="ym">{{ ym('from', 7, 2026) }}</div></div>
+    <div class="field"><label>যে মাস পর্যন্ত</label><div class="ym">{{ ym('to', today.month, today.year) }}</div></div>
+  </div>
+  <div class="field" style="margin-top:10px"><label>কোন শিট</label>
+    <div class="chips">{% for k, label in RUN_KINDS.items() %}<label class="check"><input type="checkbox" name="kind" value="{{ k }}" checked> {{ label }}</label>{% endfor %}</div></div>
+  <div class="field"><label>ধরন</label>
+    <div class="chips"><label class="check"><input type="radio" name="detail" value="0" checked> সংক্ষিপ্ত</label>
+      <label class="check"><input type="radio" name="detail" value="1"> বিস্তারিত (প্রতিটি ভাতা আলাদা কলামে)</label></div></div>
+  <input type="hidden" name="from" id="from"><input type="hidden" name="to" id="to">
+  <button class="primary" type="submit">বিবরণী তৈরি করুন</button>
+</form>
+<script>
+  (function () {
+    var form = document.getElementById('pick'), dept = document.getElementById('dept'), q = document.getElementById('q'),
+        sel = document.getElementById('emp'), count = document.getElementById('count');
+    function filter() {
+      var d = dept.value, t = q.value.trim().toLowerCase(), n = 0, first = null;
+      Array.prototype.forEach.call(sel.options, function (o) {
+        var ok = (!d || o.dataset.dept === d) && (!t || o.textContent.toLowerCase().indexOf(t) > -1);
+        o.hidden = !ok; if (ok) { n++; first = first || o; }
+      });
+      if (sel.selectedOptions.length === 0 || sel.selectedOptions[0].hidden) { if (first) first.selected = true; }
+      count.textContent = n.toLocaleString('bn-BD') + ' জন';
+    }
+    dept.addEventListener('change', filter); q.addEventListener('input', filter); filter();
+    form.addEventListener('submit', function () {
+      ['from', 'to'].forEach(function (p) {
+        document.getElementById(p).value = form[p + '_y'].value + '-' + form[p + '_m'].value;
+        form[p + '_y'].disabled = form[p + '_m'].disabled = true;
+      });
+    });
+  })();
+</script>
+{% endblock %}

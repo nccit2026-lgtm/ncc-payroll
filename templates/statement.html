@@ -9,18 +9,31 @@
   </div>
 </div>
 
-<form class="card inline-form no-print" method="get">
-  {% macro ym(prefix, val) %}
-    <select name="{{ prefix }}_m" aria-label="মাস">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == val[1] }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select>
-    <select name="{{ prefix }}_y" aria-label="বছর">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == val[0] }}>{{ y|bn }}</option>{% endfor %}</select>
-  {% endmacro %}
-  <div class="field"><label>যে মাস থেকে</label><div class="ym">{{ ym('from', start) }}</div></div>
-  <div class="field"><label>যে মাস পর্যন্ত</label><div class="ym">{{ ym('to', end) }}</div></div>
-  <input type="hidden" name="from" id="from"><input type="hidden" name="to" id="to">
-  <button type="submit">দেখুন</button>
+{% macro ym(prefix, val) %}
+  <select name="{{ prefix }}_m" aria-label="মাস">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if m == val[1] }}>{{ MONTHS_BN[m] }}</option>{% endfor %}</select>
+  <select name="{{ prefix }}_y" aria-label="বছর">{% for y in years %}<option value="{{ y }}" {{ 'selected' if y == val[0] }}>{{ y|bn }}</option>{% endfor %}</select>
+{% endmacro %}
+<form class="card no-print st-filter" method="get" id="st-form" data-base="{{ url_for('statement', emp_id=0) }}">
+  <div class="inline-form">
+    {% if employees %}
+    <div class="field" style="flex:2;min-width:260px"><label>কর্মচারী</label>
+      <select id="st-emp">{% for e in employees %}<option value="{{ e.id }}" {{ 'selected' if e.id == emp.id }}>{{ e.code }} — {{ e.name_bn }}{{ ' (' ~ e.department ~ ')' if e.department }}</option>{% endfor %}</select></div>
+    {% endif %}
+    <div class="field"><label>যে মাস থেকে</label><div class="ym">{{ ym('from', start) }}</div></div>
+    <div class="field"><label>যে মাস পর্যন্ত</label><div class="ym">{{ ym('to', end) }}</div></div>
+  </div>
+  <div class="inline-form" style="margin-top:10px">
+    <div class="field"><label>কোন শিট</label>
+      <div class="chips">{% for k, label in RUN_KINDS.items() %}<label class="check"><input type="checkbox" name="kind" value="{{ k }}" {{ 'checked' if k in kinds }}> {{ label }}</label>{% endfor %}</div></div>
+    <div class="field"><label>ধরন</label>
+      <div class="chips"><label class="check"><input type="radio" name="detail" value="0" {{ 'checked' if not detail }}> সংক্ষিপ্ত</label>
+        <label class="check"><input type="radio" name="detail" value="1" {{ 'checked' if detail }}> বিস্তারিত (প্রতিটি ভাতা আলাদা কলামে)</label></div></div>
+    <input type="hidden" name="from" id="from"><input type="hidden" name="to" id="to">
+    <button class="primary" type="submit">বিবরণী তৈরি করুন</button>
+  </div>
 </form>
 
-<div class="slip statement" id="doc">
+<div class="slip statement{{ ' wide' if detail }}" id="doc">
   <header>
     <img src="{{ url_for('static', filename='logo.png') }}" alt="">
     <h1>{{ settings.office_name }}</h1>
@@ -32,9 +45,27 @@
     <div>পদবি: {{ emp.designation or '—' }}</div><div>শাখা: {{ emp.department or '—' }}</div>
     <div>গ্রেড: {{ emp.grade|bn if emp.grade else '—' }}</div><div>ব্যাংক হিসাব নং: {{ emp.account_no|bn if emp.account_no else '—' }}</div>
   </div>
+  {% if kinds|length < RUN_KINDS|length %}<p class="small muted" style="margin:-6px 0 10px">অন্তর্ভুক্ত: {% for k in kinds %}{{ RUN_KINDS[k] }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
   {% if slips %}
-  <table class="st">
-    <thead><tr><th>মাস</th><th class="num">মূল বেতন</th><th class="num">বাড়িভাড়া</th><th class="num">চিকিৎসা</th><th class="num">অন্যান্য ভাতা</th><th class="num">মোট বেতন</th><th class="num">কর্তন</th><th class="num">নিট প্রাপ্তি</th></tr></thead>
+  <table class="st{{ ' wide' if detail }}">
+    {% if detail %}
+    <thead><tr><th>মাস</th>{% for f, label in acols %}<th class="num">{{ label }}</th>{% endfor %}<th class="num">অন্যান্য / বকেয়া</th><th class="num">মোট</th>
+      <th class="num">PF কর্তন</th><th class="num">ঋণ কিস্তি</th><th class="num">অন্য কর্তন</th><th class="num">মোট কর্তন</th><th class="num">নিট</th></tr></thead>
+    <tbody>
+    {% for r in rows %}{% set s = r.s %}
+      <tr><td>{{ month_label(s.year, s.month) }}{% if s.kind != 'salary' %}<div class="small muted">{{ s.title }}</div>{% endif %}{% if s.status != 'final' %} <span class="badge draft">খসড়া</span>{% endif %}</td>
+        {% for f, label in acols %}<td class="num">{{ s[f]|taka }}</td>{% endfor %}
+        <td class="num">{{ r.other_a|taka }}</td><td class="num">{{ s.gross|taka }}</td>
+        <td class="num">{{ (s.pf_fund + s.pf_own)|taka }}</td><td class="num">{{ r.loan|taka }}</td><td class="num">{{ (r.other_d + s.revenue_stamp)|taka }}</td>
+        <td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><td>মোট ({{ slips|length|bn }}টি)</td>{% for f, label in acols %}<td class="num">{{ totals[f]|taka }}</td>{% endfor %}
+      <td class="num">{{ totals.other_a|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ (totals.pf_fund + totals.pf_own)|taka }}</td>
+      <td class="num">{{ totals.loan|taka }}</td><td class="num">{{ (totals.total_deduction - totals.pf_fund - totals.pf_own - totals.loan)|taka }}</td>
+      <td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td></tr></tfoot>
+    {% else %}
+    <thead><tr><th>মাস</th><th class="num">মূল বেতন</th><th class="num">বাড়িভাড়া</th><th class="num">চিকিৎসা</th><th class="num">অন্যান্য ভাতা</th><th class="num">মোট</th><th class="num">কর্তন</th><th class="num">নিট প্রাপ্তি</th></tr></thead>
     <tbody>
     {% for s in slips %}
       {% set other = s.gross - s.basic - s.house_rent - s.medical %}
@@ -43,10 +74,11 @@
         <td class="num">{{ other|taka }}</td><td class="num">{{ s.gross|taka }}</td><td class="num">{{ s.total_deduction|taka }}</td><td class="num"><b>{{ s.net|taka }}</b></td></tr>
     {% endfor %}
     </tbody>
-    <tfoot><tr><td>মোট ({{ slips|length|bn }} মাস)</td><td class="num">{{ totals.basic|taka }}</td><td class="num">{{ totals.house_rent|taka }}</td><td class="num">{{ totals.medical|taka }}</td>
+    <tfoot><tr><td>মোট ({{ slips|length|bn }}টি)</td><td class="num">{{ totals.basic|taka }}</td><td class="num">{{ totals.house_rent|taka }}</td><td class="num">{{ totals.medical|taka }}</td>
       <td class="num">{{ (totals.gross - totals.basic - totals.house_rent - totals.medical)|taka }}</td><td class="num">{{ totals.gross|taka }}</td><td class="num">{{ totals.total_deduction|taka }}</td><td class="num">{{ totals.net|taka }}</td></tr></tfoot>
+    {% endif %}
   </table>
-  <p class="hint">অন্যান্য ভাতা: শিক্ষা, টিফিন, যাতায়াত, মোবাইল, ধোলাই, অফিস প্রদত্ত PF, উৎসব/নববর্ষ ভাতা ও বকেয়া। কর্তন: PF ও অন্যান্য কর্তন।</p>
+  <p class="hint">{% if detail %}কর্তনের ভেতরে ঋণের কিস্তি আলাদা দেখানো হয়েছে।{% else %}অন্যান্য ভাতা: শিক্ষা, টিফিন, যাতায়াত, মোবাইল, ধোলাই, অফিস প্রদত্ত PF, উৎসব/নববর্ষ ভাতা ও বকেয়া। কর্তন: PF, ঋণের কিস্তি ও অন্যান্য কর্তন।{% endif %}</p>
   {% else %}
   <p class="muted" style="padding:20px 0;text-align:center">এই সময়ের মধ্যে কোনো {{ 'চূড়ান্ত ' if user.role != 'admin' }}বেতনের রেকর্ড নেই।</p>
   {% endif %}
@@ -63,8 +95,9 @@
 <script>
   (function () {
     // মাস/বছর ড্রপডাউন → from=YYYY-MM, to=YYYY-MM
-    var form = document.querySelector('form.no-print');
+    var form = document.getElementById('st-form'), empSel = document.getElementById('st-emp');
     form.addEventListener('submit', function () {
+      if (empSel) form.action = form.dataset.base.replace(/\/0$/, '/' + empSel.value);
       ['from', 'to'].forEach(function (p) {
         document.getElementById(p).value = form[p + '_y'].value + '-' + form[p + '_m'].value;
         form[p + '_y'].disabled = form[p + '_m'].disabled = true;
@@ -80,8 +113,9 @@
         doc.classList.add('capturing');
         var canvas = await html2canvas(doc, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
         doc.classList.remove('capturing');
-        var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-        var W = 210, H = 297, M = 10, CW = W - 2 * M, pxPerMm = canvas.width / CW, pageH = (H - 2 * M) * pxPerMm, sy = 0, first = true;
+        var wide = {{ 'true' if detail else 'false' }};  // বিস্তারিত হলে আড়াআড়ি পাতা
+        var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: wide ? 'landscape' : 'portrait' });
+        var W = wide ? 297 : 210, H = wide ? 210 : 297, M = 10, CW = W - 2 * M, pxPerMm = canvas.width / CW, pageH = (H - 2 * M) * pxPerMm, sy = 0, first = true;
         while (sy < canvas.height) {
           if (!first) pdf.addPage();
           var sh = Math.min(pageH, canvas.height - sy), part = document.createElement('canvas');

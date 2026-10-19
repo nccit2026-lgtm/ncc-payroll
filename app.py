@@ -18,7 +18,7 @@ from db import close_db, get_db, get_settings, init_db, save_setting
 import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
                      FESTIVAL_MULTIPLIER, RELIGIONS, RUN_KINDS, arrears_already_given, generate_run,
-                     LOAN_KINDS, group_by_department, insert_slip, loan_progress, record_loan_payments,
+                     LOAN_KINDS, SHORT_LABELS, group_by_department, insert_slip, loan_progress, record_loan_payments,
                      regenerate_slip, slip_for)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1140,14 +1140,42 @@ def register_routes(app):
         end = ym("to", months[-1] if months else (date.today().year, date.today().month))
         if start > end:
             start, end = end, start
-        slips = [s for s in all_slips if start <= (s["year"], s["month"]) <= end]
+        kinds = [k for k in request.args.getlist("kind") if k in RUN_KINDS] or list(RUN_KINDS)
+        detail = request.args.get("detail") == "1"
+        slips = [s for s in all_slips if start <= (s["year"], s["month"]) <= end and s["kind"] in kinds]
+        rows = []
+        for s in slips:
+            oa, od = json.loads(s["other_allowance"]), json.loads(s["other_deduction"])
+            rows.append({"s": s, "other_a": round(sum(float(x["amount"]) for x in oa), 2),
+                         "loan": round(sum(float(x["amount"]) for x in od if x.get("loan_id")), 2),
+                         "other_d": round(sum(float(x["amount"]) for x in od if not x.get("loan_id")), 2)})
         totals = {f: round(sum(s[f] for s in slips), 2)
                   for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS + ["gross", "total_deduction", "net"]}
-        totals["other_a"] = round(sum(sum(float(x["amount"]) for x in json.loads(s["other_allowance"])) for s in slips), 2)
-        totals["other_d"] = round(sum(sum(float(x["amount"]) for x in json.loads(s["other_deduction"])) for s in slips), 2)
-        years = sorted({y for y, _ in months} | {date.today().year})
-        return render_template("statement.html", emp=emp, slips=slips, totals=totals, start=start, end=end,
-                               years=years, today=date.today())
+        for k in ("other_a", "loan", "other_d"):
+            totals[k] = round(sum(r[k] for r in rows), 2)
+        # বিস্তারিত: যে ভাতাগুলো এই সময়ে কারো আছে শুধু সেগুলোর কলাম
+        acols = [(f, SHORT_LABELS[f]) for f in ALLOWANCE_FIELDS if totals[f]] if detail else []
+        years = sorted({y for y, _ in months} | {date.today().year, 2026})
+        employees = get_db().execute("SELECT id, code, name_bn, department FROM employees ORDER BY code").fetchall() \
+            if user["role"] == "admin" else []
+        return render_template("statement.html", emp=emp, slips=slips, rows=rows, totals=totals, start=start, end=end,
+                               years=years, today=date.today(), kinds=kinds, detail=detail, acols=acols,
+                               employees=employees)
+
+    @app.route("/admin/statements")
+    @admin_required
+    def statements():
+        """যেকোনো কর্মচারীর বেতন বিবরণী: শাখা → কর্মচারী, মাসের সীমা, শিটের ধরন, বিস্তারিত/সংক্ষিপ্ত।"""
+        emp_id = to_int(request.args.get("emp"), None)
+        if emp_id:
+            args = request.args.to_dict(flat=False)
+            args.pop("emp", None)
+            return redirect(url_for("statement", emp_id=emp_id, **args))
+        employees = get_db().execute("SELECT id, code, name_bn, designation, department, status FROM employees "
+                                     "ORDER BY code").fetchall()
+        today = date.today()
+        return render_template("admin/statements.html", employees=employees, depts=all_departments(),
+                               years=sorted({2026, today.year, today.year - 1}), today=today)
 
     @app.route("/payslip/<int:slip_id>")
     @login_required

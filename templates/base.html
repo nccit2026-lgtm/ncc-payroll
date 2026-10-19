@@ -35,6 +35,7 @@
         <a href="{{ url_for('employees') }}" class="{{ 'active' if ep.startswith('employee') }}">{{ icon('users') }}কর্মচারী</a>
         <a href="{{ url_for('departments') }}" class="{{ 'active' if ep == 'departments' }}">{{ icon('dept') }}শাখা</a>
         <a href="{{ url_for('payroll_list') }}" class="{{ 'active' if ep.startswith('payroll') or ep.startswith('payslip') }}">{{ icon('sheet') }}মাসিক বেতন শিট</a>
+        <a href="{{ url_for('statements') }}" class="{{ 'active' if ep in ('statements', 'statement') }}">{{ icon('sheet') }}বেতন বিবরণী</a>
         <a href="{{ url_for('reports') }}" class="{{ 'active' if ep.startswith('reports') }}">{{ icon('chart') }}মাসভিত্তিক হিসাব</a>
         <a href="{{ url_for('payscale_page') }}" class="{{ 'active' if ep == 'payscale_page' }}">{{ icon('scale') }}বেতন স্কেল ও ভাতা</a>
       {% else %}

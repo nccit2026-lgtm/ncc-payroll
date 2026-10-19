@@ -27,6 +27,11 @@ FIELD_LABELS = {
     "revenue_stamp": "রাজস্ব স্ট্যাম্প",
 }
 
+# সারণির ছোট কলাম-নাম
+SHORT_LABELS = {"basic": "মূল বেতন", "house_rent": "বাড়িভাড়া", "medical": "চিকিৎসা", "education": "শিক্ষা",
+                "tiffin": "টিফিন", "transport": "যাতায়াত", "mobile": "মোবাইল", "wash": "ধোলাই", "special": "মহার্ঘ",
+                "pf_office": "অফিস PF", "festival": "উৎসব", "boishakhi": "নববর্ষ"}
+
 ARREARS_LABEL = "বকেয়া: জুলাই–সেপ্টেম্বর ২০২৬"
 
 RELIGIONS = ["ইসলাম", "হিন্দু", "বৌদ্ধ", "খ্রিস্টান", "অন্যান্য"]
