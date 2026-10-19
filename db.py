@@ -23,7 +23,7 @@ MIGRATIONS = {
         "new_basic_override": "REAL", "pf": "INTEGER NOT NULL DEFAULT 0",
         "special_rate": "TEXT NOT NULL DEFAULT 'auto'", "tiffin": "INTEGER NOT NULL DEFAULT 1",
         "transport": "INTEGER NOT NULL DEFAULT 1", "wash": "INTEGER NOT NULL DEFAULT 0",
-        "separation_reason": "TEXT", "separation_date": "TEXT", "religion": "TEXT",
+        "separation_reason": "TEXT", "separation_date": "TEXT", "religion": "TEXT", "ovr_mobile": "REAL",
     },
     "payslips": {
         "mobile": "REAL NOT NULL DEFAULT 0", "wash": "REAL NOT NULL DEFAULT 0", "special": "REAL NOT NULL DEFAULT 0",

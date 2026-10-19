@@ -1,0 +1,67 @@
+{# ঋণ ও কিস্তির অবস্থা। প্রয়োজন: loans, editable (অ্যাডমিন হলে true) #}
+<div class="card" id="loans">
+  <h2>ঋণ ও কিস্তি</h2>
+  {% if loans %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>ঋণ</th><th class="num">প্রতি কিস্তি</th><th>অগ্রগতি</th><th class="num">বাকি কিস্তি</th><th class="num">বাকি টাকা</th><th>অবস্থা</th></tr></thead>
+    <tbody>
+    {% for x in loans %}{% set l = x.loan %}
+      <tr>
+        <td><b>{{ l.kind }}</b>{% if l.principal %}<div class="small muted">মোট ঋণ {{ l.principal|taka }}</div>{% endif %}{% if l.note %}<div class="small muted">{{ l.note }}</div>{% endif %}</td>
+        <td class="num">{{ l.installment|taka }}</td>
+        <td style="min-width:180px">
+          {% if x.total %}
+            <div class="progress"><i style="width: {{ [x.paid / x.total * 100, 100]|min }}%"></i></div>
+            <div class="small">{{ x.paid|bn }} / {{ x.total|bn }} কিস্তি পরিশোধিত{% if x.draft %} <span class="muted">(+{{ x.draft|bn }} খসড়া শিটে)</span>{% endif %}</div>
+          {% else %}
+            <div class="small">{{ x.paid|bn }} কিস্তি পরিশোধিত{% if x.draft %} <span class="muted">(+{{ x.draft|bn }} খসড়া)</span>{% endif %} · মোট কিস্তি দেওয়া নেই</div>
+          {% endif %}
+        </td>
+        <td class="num">{{ x.remaining|bn if x.remaining is not none else '—' }}</td>
+        <td class="num">{{ x.remaining_amount|taka if x.remaining_amount is not none else '—' }}</td>
+        <td>{% if x.done %}<span class="badge final">সম্পন্ন</span>{% elif l.status == 'closed' %}<span class="badge off">বন্ধ</span>{% else %}<span class="badge draft">চলমান</span>{% endif %}</td>
+      </tr>
+        {% if editable %}
+      <tr class="loan-edit">
+        <td colspan="6">
+          <details><summary class="small">সম্পাদনা: মোট কিস্তি, পরিশোধিত কিস্তি, টাকা</summary>
+            <form method="post" action="{{ url_for('loan_update', loan_id=l.id) }}" class="loan-form">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <label>ধরন<select name="kind">{% for k in LOAN_KINDS %}<option {{ 'selected' if k == l.kind }}>{{ k }}</option>{% endfor %}{% if l.kind not in LOAN_KINDS %}<option selected>{{ l.kind }}</option>{% endif %}</select></label>
+              <label>প্রতি কিস্তি<input name="installment" value="{{ l.installment|plain }}" inputmode="decimal"></label>
+              <label>মোট কিস্তি<input name="total_installments" value="{{ l.total_installments or '' }}" inputmode="numeric"></label>
+              <label>আগে পরিশোধিত কিস্তি<input name="paid_before" value="{{ l.paid_before }}" inputmode="numeric"></label>
+              <label>মোট ঋণ (ঐচ্ছিক)<input name="principal" value="{{ (l.principal or '')|plain }}" inputmode="decimal"></label>
+              <label>কাটা শুরু (মাস)<input type="month" name="start_ym" value="{{ l.start_ym or '' }}"></label>
+              <label>মন্তব্য<input name="note" value="{{ l.note or '' }}"></label>
+              <div class="actions"><button class="sm primary" type="submit">সংরক্ষণ</button>
+                <button class="sm" name="action" value="{{ 'reopen' if l.status == 'closed' else 'close' }}">{{ 'আবার চালু' if l.status == 'closed' else 'বন্ধ করুন' }}</button>
+                <button class="sm danger" name="action" value="delete" onclick="return confirm('এই ঋণ মুছে ফেলবেন?')">মুছুন</button></div>
+            </form>
+          </details>
+        </td>
+      </tr>
+        {% endif %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint">মাসিক বেতন শিট চূড়ান্ত হলে সেই মাসের কিস্তি পরিশোধিত ধরা হয়। মোট কিস্তি পূর্ণ হলে আর কাটা হয় না।</p>
+  {% else %}
+  <p class="muted">কোনো ঋণ নেই।</p>
+  {% endif %}
+  {% if editable %}
+  <details style="margin-top:8px"><summary><b>+ নতুন ঋণ যোগ করুন</b></summary>
+    <form method="post" action="{{ url_for('loan_add', emp_id=emp.id) }}" class="loan-form" style="margin-top:10px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>ধরন<select name="kind">{% for k in LOAN_KINDS %}<option>{{ k }}</option>{% endfor %}</select></label>
+      <label>প্রতি কিস্তি (টাকা)<input name="installment" required inputmode="decimal"></label>
+      <label>মোট কিস্তি<input name="total_installments" inputmode="numeric"></label>
+      <label>আগে পরিশোধিত কিস্তি<input name="paid_before" value="0" inputmode="numeric"></label>
+      <label>মোট ঋণ (ঐচ্ছিক)<input name="principal" inputmode="decimal"></label>
+      <label>কাটা শুরু (মাস, ঐচ্ছিক)<input type="month" name="start_ym"></label>
+      <label>মন্তব্য<input name="note"></label>
+      <div class="actions"><button class="primary" type="submit">যোগ করুন</button></div>
+    </form>
+  </details>
+  {% endif %}
+</div>

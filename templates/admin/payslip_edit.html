@@ -22,7 +22,7 @@
       <h3>অন্যান্য কর্তন</h3>
       {% set od = loads(slip.other_deduction) %}
       {% for i in range(od|length + 2) %}{% set it = od[i] if i < od|length else {} %}
-        <div class="grid g2" style="gap:8px"><div class="field"><input name="other_deduction_name" placeholder="বিবরণ" value="{{ it.name or '' }}"></div><div class="field"><input class="minus" name="other_deduction_amount" placeholder="টাকা" value="{{ it.amount if it.amount is defined else '' }}" inputmode="numeric"></div></div>
+        <div class="grid g2" style="gap:8px"><div class="field"><input type="hidden" name="other_deduction_loan" value="{{ it.loan_id or '' }}"><input name="other_deduction_name" placeholder="বিবরণ" value="{{ it.name or '' }}"></div><div class="field"><input class="minus" name="other_deduction_amount" placeholder="টাকা" value="{{ it.amount if it.amount is defined else '' }}" inputmode="numeric"></div></div>
       {% endfor %}
       <div class="card" style="background:var(--brand-soft);margin-top:12px">
         <div>মোট বেতন: <b id="t-gross"></b></div><div>মোট কর্তন: <b id="t-ded"></b></div><div style="font-size:1.2rem">নিট প্রদেয়: <b id="t-net"></b></div>

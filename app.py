@@ -18,7 +18,8 @@ from db import close_db, get_db, get_settings, init_db, save_setting
 import payscale
 from payroll import (ALLOWANCE_FIELDS, DEDUCTION_FIELDS, FIELD_LABELS, age_on, compute_components, finalize_totals,
                      FESTIVAL_MULTIPLIER, RELIGIONS, RUN_KINDS, arrears_already_given, generate_run,
-                     group_by_department, insert_slip, regenerate_slip, slip_for)
+                     LOAN_KINDS, group_by_department, insert_slip, loan_progress, record_loan_payments,
+                     regenerate_slip, slip_for)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -162,7 +163,7 @@ EMPLOYEE_TEXT_FIELDS = ["code", "name_bn", "name_en", "father_name", "mother_nam
                         "email", "address", "designation", "department", "employment_type", "status", "tin", "religion",
                         "bank_name", "bank_branch", "account_no"]
 EMPLOYEE_DATE_FIELDS = ["dob", "join_date", "prl_date"]
-OVERRIDE_FIELDS = ["ovr_house_rent", "ovr_medical", "ovr_education", "ovr_tiffin", "ovr_transport"]
+OVERRIDE_FIELDS = ["ovr_house_rent", "ovr_medical", "ovr_education", "ovr_tiffin", "ovr_transport", "ovr_mobile"]
 FLAG_FIELDS = ["govt_quarter", "inc_2026", "inc_2027", "pf", "tiffin", "transport", "wash"]
 SPECIAL_RATES = ["auto", "0.10", "0.15", "0"]
 
@@ -287,6 +288,80 @@ def pay_context(emp):
             "arrears": payscale.arrears(emp), "current": current, "today": today, "phase": payscale.phase_of(today.year, today.month),
             "age": age_on(emp["dob"], today), "prl": payscale.prl_date(emp["dob"]), "special_rate": payscale.special_rate(emp)
             if emp["grade"] else 0}
+
+
+def employee_loans(emp_id):
+    loans = get_db().execute("SELECT * FROM loans WHERE employee_id = ? ORDER BY status, id", (emp_id,)).fetchall()
+    return [{"loan": l, **loan_progress(l)} for l in loans]
+
+
+def loan_from_form(form):
+    ym = (form.get("start_ym") or "").strip()
+    return {"kind": (form.get("kind") or "অন্যান্য ঋণ").strip(), "installment": round(to_float(form.get("installment")), 2),
+            "total_installments": to_int(form.get("total_installments"), None) or None,
+            "paid_before": to_int(form.get("paid_before")), "principal": optional_num(form.get("principal")),
+            "start_ym": ym if re.fullmatch(r"\d{4}-\d{2}", ym) else None, "note": (form.get("note") or "").strip() or None}
+
+
+def items_text(emp_id, kind):
+    rows = get_db().execute("SELECT name, amount FROM employee_items WHERE employee_id = ? AND kind = ? ORDER BY id",
+                            (emp_id, kind)).fetchall()
+    return "; ".join(f"{r['name']}={plain_num(r['amount'])}" for r in rows) or None
+
+
+def parse_items(text):
+    """'মোবাইল ভাতা=1500; আয়কর=500' → [(নাম, টাকা)]"""
+    out = []
+    for part in re.split(r"[;\n]", str(text or "")):
+        if "=" in part:
+            name, amt = part.rsplit("=", 1)
+            if name.strip():
+                out.append((name.strip(), round(to_float(amt), 2)))
+    return out
+
+
+def employee_export_row(e):
+    d = dict(e)
+    d["allow_items"], d["ded_items"] = items_text(e["id"], "allowance"), items_text(e["id"], "deduction")
+    for i, kind in enumerate(excel.IMPORT_LOAN_KINDS):
+        loan = get_db().execute("SELECT * FROM loans WHERE employee_id = ? AND kind = ? AND status = 'active' "
+                                "ORDER BY id DESC", (e["id"], kind)).fetchone()
+        if loan:
+            pr = loan_progress(loan)
+            d[f"loan{i}_inst"], d[f"loan{i}_total"], d[f"loan{i}_paid"] = loan["installment"], loan["total_installments"], pr["paid"]
+    return d
+
+
+def import_extras(emp_id, raw):
+    """ইমপোর্টের অতিরিক্ত কলাম: ভাতা/কর্তনের তালিকা ও ঋণ (কলাম খালি থাকলে আগের তথ্য অপরিবর্তিত)।"""
+    conn = get_db()
+    for col, kind in [("allow_items", "allowance"), ("ded_items", "deduction")]:
+        if raw.get(col) not in (None, ""):
+            conn.execute("DELETE FROM employee_items WHERE employee_id = ? AND kind = ?", (emp_id, kind))
+            for name, amt in parse_items(raw[col]):
+                conn.execute("INSERT INTO employee_items (employee_id, kind, name, amount) VALUES (?, ?, ?, ?)",
+                             (emp_id, kind, name, amt))
+    for i, kind in enumerate(excel.IMPORT_LOAN_KINDS):
+        inst = raw.get(f"loan{i}_inst")
+        if inst in (None, ""):
+            continue
+        inst = round(to_float(inst), 2)
+        total = to_int(raw.get(f"loan{i}_total"), None) or None
+        paid = raw.get(f"loan{i}_paid")
+        loan = conn.execute("SELECT * FROM loans WHERE employee_id = ? AND kind = ? AND status = 'active' ORDER BY id DESC",
+                            (emp_id, kind)).fetchone()
+        if inst <= 0:
+            if loan:
+                conn.execute("UPDATE loans SET status = 'closed' WHERE id = ?", (loan["id"],))
+        elif loan:
+            # পরিশোধিত কিস্তির ঘরে দেওয়া সংখ্যা = আগে পরিশোধিত + এই সফটওয়্যারে চূড়ান্ত শিটে কাটা
+            final = loan_progress(loan)["paid"] - loan["paid_before"]
+            paid_before = max(to_int(paid) - final, 0) if paid not in (None, "") else loan["paid_before"]
+            conn.execute("UPDATE loans SET installment = ?, total_installments = ?, paid_before = ? WHERE id = ?",
+                         (inst, total, paid_before, loan["id"]))
+        else:
+            conn.execute("INSERT INTO loans (employee_id, kind, installment, total_installments, paid_before) "
+                         "VALUES (?, ?, ?, ?, ?)", (emp_id, kind, inst, total, to_int(paid)))
 
 
 def employee_slips(emp_id, final_only):
@@ -488,6 +563,7 @@ def register_routes(app):
         changes = conn.execute("SELECT * FROM employee_changes WHERE employee_id = ? ORDER BY id DESC LIMIT 20",
                                (emp_id,)).fetchall()
         return render_template("admin/employee_view.html", emp=emp, items=items, account=account, changes=changes,
+                               loans=employee_loans(emp_id), LOAN_KINDS=LOAN_KINDS,
                                slips=employee_slips(emp_id, final_only=False), **pay_context(emp))
 
     @app.route("/admin/employees/<int:emp_id>/items", methods=["POST"])
@@ -559,6 +635,46 @@ def register_routes(app):
         flash(f"{emp['name_bn']} ({emp['code']}) স্থায়ীভাবে মুছে ফেলা হয়েছে।", "ok")
         return redirect(url_for("employees"))
 
+    @app.route("/admin/employees/<int:emp_id>/loans", methods=["POST"])
+    @admin_required
+    def loan_add(emp_id):
+        get_db().execute("SELECT 1 FROM employees WHERE id = ?", (emp_id,)).fetchone() or abort(404)
+        d = loan_from_form(request.form)
+        if d["installment"] <= 0:
+            flash("কিস্তির টাকা দিন।", "error")
+        else:
+            cols = list(d)
+            get_db().execute(f"INSERT INTO loans (employee_id, {', '.join(cols)}) VALUES (?, {', '.join('?' * len(cols))})",
+                             [emp_id] + [d[c] for c in cols])
+            get_db().commit()
+            flash(f"{d['kind']} যুক্ত হয়েছে — প্রতি মাসের বেতন শিটে {bn_taka(d['installment'])} টাকা করে কাটা হবে।", "ok")
+        return redirect(url_for("employee_view", emp_id=emp_id) + "#loans")
+
+    @app.route("/admin/loans/<int:loan_id>", methods=["POST"])
+    @admin_required
+    def loan_update(loan_id):
+        loan = get_db().execute("SELECT * FROM loans WHERE id = ?", (loan_id,)).fetchone() or abort(404)
+        action = request.form.get("action")
+        if action == "delete":
+            if get_db().execute("SELECT 1 FROM loan_payments p JOIN payroll_runs r ON r.id = p.run_id "
+                                "WHERE p.loan_id = ? AND r.status = 'final'", (loan_id,)).fetchone():
+                flash("এই ঋণের কিস্তি চূড়ান্ত বেতন শিটে কাটা হয়েছে, তাই মোছা যাবে না — 'বন্ধ করুন' ব্যবহার করুন।", "error")
+            else:
+                get_db().execute("DELETE FROM loans WHERE id = ?", (loan_id,))
+                flash("ঋণ মুছে ফেলা হয়েছে।", "ok")
+        elif action in ("close", "reopen"):
+            get_db().execute("UPDATE loans SET status = ? WHERE id = ?", ("closed" if action == "close" else "active", loan_id))
+            flash("ঋণ বন্ধ করা হয়েছে — আর কিস্তি কাটা হবে না।" if action == "close" else "ঋণ আবার চালু করা হয়েছে।", "ok")
+        else:
+            d = loan_from_form(request.form)
+            get_db().execute("UPDATE loans SET kind = ?, installment = ?, total_installments = ?, paid_before = ?, "
+                             "principal = ?, start_ym = ?, note = ? WHERE id = ?",
+                             [d[c] for c in ["kind", "installment", "total_installments", "paid_before", "principal",
+                                             "start_ym", "note"]] + [loan_id])
+            flash("ঋণের তথ্য হালনাগাদ হয়েছে। খসড়া শিটে প্রভাব দেখতে সেই শিটে 'সবার পুনঃহিসাব' চাপুন।", "ok")
+        get_db().commit()
+        return redirect(url_for("employee_view", emp_id=loan["employee_id"]) + "#loans")
+
     @app.route("/admin/employees/<int:emp_id>/history.xlsx")
     @admin_required
     def employee_history_xlsx(emp_id):
@@ -569,7 +685,7 @@ def register_routes(app):
     @app.route("/admin/employees/export.xlsx")
     @admin_required
     def employees_export():
-        rows = get_db().execute("SELECT * FROM employees ORDER BY grade, code").fetchall()
+        rows = [employee_export_row(e) for e in get_db().execute("SELECT * FROM employees ORDER BY code")]
         return xlsx_response(excel.employees_workbook(rows, get_settings()), "employees.xlsx")
 
     @app.route("/admin/employees/template.xlsx")
@@ -615,14 +731,15 @@ def register_routes(app):
                 form = {k: ("" if v is None else v if isinstance(v, (date, datetime)) else str(v)) for k, v in form.items()}
                 data = employee_from_form(form)
                 if existing:
-                    save_employee(data, existing["id"])
+                    emp_id = save_employee(data, existing["id"])
                     updated += 1
                 elif conn.execute("SELECT 1 FROM users WHERE username = ?", (code,)).fetchone():
                     errors.append(f"সারি {bn_num(r_idx)}: আইডি '{code}' ব্যবহারকারী নাম হিসেবে আগেই আছে")
                     continue
                 else:
-                    save_employee(data)
+                    emp_id = save_employee(data)
                     added += 1
+                import_extras(emp_id, raw)
                 if "error" in payscale.plan(data):
                     errors.append(f"সারি {bn_num(r_idx)} ({data['name_bn']}): বেতন হিসাব হয়নি — {payscale.plan(data)['error']}")
             conn.commit()
@@ -875,6 +992,9 @@ def register_routes(app):
     def payslip_remove(run_id, slip_id):
         run = get_run_or_404(run_id)
         if require_draft(run):
+            row = get_db().execute("SELECT employee_id FROM payslips WHERE id = ? AND run_id = ?", (slip_id, run_id)).fetchone()
+            if row:
+                record_loan_payments(run_id, row["employee_id"], [])
             get_db().execute("DELETE FROM payslips WHERE id = ? AND run_id = ?", (slip_id, run_id))
             get_db().commit()
             flash("এই মাসের শিট থেকে বাদ দেওয়া হয়েছে।", "ok")
@@ -898,7 +1018,9 @@ def register_routes(app):
             s = {f: round(to_float(request.form.get(f)), 2) for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS}
             for kind in ("other_allowance", "other_deduction"):
                 names, amounts = request.form.getlist(f"{kind}_name"), request.form.getlist(f"{kind}_amount")
-                s[kind] = [{"name": n.strip(), "amount": round(to_float(a), 2)} for n, a in zip(names, amounts) if n.strip()]
+                loan_ids = request.form.getlist(f"{kind}_loan") or [""] * len(names)
+                s[kind] = [{"name": n.strip(), "amount": round(to_float(a), 2), **({"loan_id": int(l)} if l else {})}
+                           for n, a, l in zip(names, amounts, loan_ids) if n.strip()]
             finalize_totals(s)
             get_db().execute(
                 f"UPDATE payslips SET {', '.join(f + ' = ?' for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS)}, "
@@ -906,6 +1028,7 @@ def register_routes(app):
                 [s[f] for f in ALLOWANCE_FIELDS + DEDUCTION_FIELDS] +
                 [json.dumps(s["other_allowance"], ensure_ascii=False), json.dumps(s["other_deduction"], ensure_ascii=False),
                  s["gross"], s["total_deduction"], s["net"], slip_id])
+            record_loan_payments(run_id, slip["employee_id"], s["other_deduction"])
             get_db().commit()
             flash(f"{slip['name_bn']} এর এ মাসের বেতন সংশোধন হয়েছে।", "ok")
             return redirect(url_for("payroll_view", run_id=run_id))
@@ -956,6 +1079,7 @@ def register_routes(app):
         year = date.today().year
         ytd = round(sum(s["net"] for s in slips if s["year"] == year), 2)
         return render_template("me/dashboard.html", emp=emp, slips=slips, latest=slips[0] if slips else None,
+                               loans=employee_loans(emp["id"]),
                                chart=list(reversed(slips[:12])), ytd=ytd, year=year, **pay_context(emp))
 
     @app.route("/me/profile")

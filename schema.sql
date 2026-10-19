@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS employees (
     ovr_education    INTEGER,
     ovr_tiffin       INTEGER,
     ovr_transport    INTEGER,
+    ovr_mobile       REAL,
     created_at       TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -153,4 +154,28 @@ CREATE TABLE IF NOT EXISTS employee_changes (
     old_value   TEXT,
     new_value   TEXT,
     changed_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ঋণ (গৃহ নির্মাণ ঋণ, ভবিষ্য তহবিল অগ্রিম, অন্যান্য ঋণ): প্রতি মাসের বেতন শিট থেকে কিস্তি কাটা হয়
+CREATE TABLE IF NOT EXISTS loans (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id        INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    kind               TEXT NOT NULL,
+    installment        REAL NOT NULL,            -- প্রতি কিস্তির টাকা
+    total_installments INTEGER,                  -- মোট কিস্তি (জানা না থাকলে খালি)
+    paid_before        INTEGER NOT NULL DEFAULT 0, -- এই সফটওয়্যার শুরুর আগে পরিশোধিত কিস্তি
+    principal          REAL,                     -- মোট ঋণ (ঐচ্ছিক)
+    start_ym           TEXT,                     -- যে মাস থেকে কাটা শুরু (YYYY-MM)
+    status             TEXT NOT NULL DEFAULT 'active',  -- active / closed
+    note               TEXT,
+    created_at         TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- কোন শিটে কোন ঋণের কিস্তি কাটা হয়েছে (শিট চূড়ান্ত হলে কিস্তি পরিশোধিত ধরা হয়)
+CREATE TABLE IF NOT EXISTS loan_payments (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_id INTEGER NOT NULL REFERENCES loans(id) ON DELETE CASCADE,
+    run_id  INTEGER NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+    amount  REAL NOT NULL,
+    UNIQUE (loan_id, run_id)
 );

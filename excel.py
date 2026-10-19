@@ -260,7 +260,11 @@ EMPLOYEE_COLUMNS = [
     ("father_name", "পিতার নাম"), ("mother_name", "মাতার নাম"), ("gender", "লিঙ্গ"), ("nid", "এনআইডি"),
     ("mobile", "মোবাইল"), ("email", "ইমেইল"), ("address", "ঠিকানা"), ("tin", "টিআইএন"),
     ("bank_name", "ব্যাংক"), ("bank_branch", "শাখা (ব্যাংক)"), ("account_no", "হিসাব নং"),
-]
+    ("ovr_mobile", "মোবাইল ভাতা (নির্দিষ্ট, ঐচ্ছিক)"),
+    ("allow_items", "অতিরিক্ত ভাতা (নাম=টাকা; নাম=টাকা)"), ("ded_items", "নির্দিষ্ট কর্তন (নাম=টাকা; নাম=টাকা)"),
+] + [(f"loan{i}_{part}", f"{kind} — {label}") for i, kind in enumerate(["গৃহ নির্মাণ ঋণ", "ভবিষ্য তহবিল অগ্রিম", "অন্যান্য ঋণ"])
+     for part, label in [("inst", "কিস্তি (টাকা)"), ("total", "মোট কিস্তি"), ("paid", "পরিশোধিত কিস্তি")]]
+IMPORT_LOAN_KINDS = ["গৃহ নির্মাণ ঋণ", "ভবিষ্য তহবিল অগ্রিম", "অন্যান্য ঋণ"]
 FLAG_COLUMNS = {"inc_2026", "inc_2027", "pf", "tiffin", "transport", "wash", "govt_quarter"}
 
 

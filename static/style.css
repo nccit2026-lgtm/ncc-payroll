@@ -208,3 +208,11 @@ table.st th { position: static; }
 .list-scroll { overflow: auto; }
 .list-scroll thead th { position: sticky; top: 0; z-index: 2; }
 @media (max-width: 860px) { .sticky-head { position: static; } }
+.progress { height: 8px; background: #e3ebe7; border-radius: 99px; overflow: hidden; margin: 4px 0; }
+.progress i { display: block; height: 100%; background: var(--brand); }
+.loan-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; align-items: end; }
+.loan-form label { margin: 0; }
+.loan-form .actions { grid-column: 1 / -1; }
+.loan-form label { display: flex; flex-direction: column; gap: 3px; font-size: .82rem; }
+tr.loan-edit td { padding-top: 0; border-top: 0; background: #fbfcfc; }
+tr.loan-edit summary { color: var(--brand); padding: 4px 0; }

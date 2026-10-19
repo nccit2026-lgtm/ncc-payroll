@@ -1,6 +1,7 @@
 """মাসিক বেতন শিট — payscale.py এর নিয়মে প্রতি কর্মচারীর মাসের বেতন বিবরণী তৈরি।"""
 import json
 
+from bn import bn_num
 from db import get_db, get_settings
 from payscale import age_on_date, allowance_basic, arrears, month_components, phase_of, r2
 
@@ -46,7 +47,7 @@ def age_on(dob, on):
 
 
 def compute_components(emp, settings, year, month, include_festival=False, include_boishakhi=False,
-                       include_arrears=False):
+                       include_arrears=False, run=None):
     """একজন কর্মচারীর এক মাসের সম্পূর্ণ বেতন বিবরণী; হিসাব করা না গেলে (তথ্য অসম্পূর্ণ) None।"""
     c, plan = month_components(emp, year, month)
     if c is None:
@@ -56,6 +57,7 @@ def compute_components(emp, settings, year, month, include_festival=False, inclu
     ).fetchall()
     other_a = [{"name": i["name"], "amount": i["amount"]} for i in items if i["kind"] == "allowance"]
     other_d = [{"name": i["name"], "amount": i["amount"]} for i in items if i["kind"] == "deduction"]
+    other_d += loan_deductions(emp, run or {"id": 0, "year": year, "month": month})
     if include_arrears:
         a = arrears(emp)
         if a and a["total"]:
@@ -123,7 +125,7 @@ def slip_for(emp, run, settings):
     """যেকোনো ধরনের শিটের জন্য একজনের বিবরণী: (slip, None) অথবা (None, কারণ)।"""
     if run["kind"] == "salary":
         s = compute_components(emp, settings, run["year"], run["month"], run["include_festival"],
-                               run["include_boishakhi"], run["include_arrears"])
+                               run["include_boishakhi"], run["include_arrears"], run=run)
         return (s, None) if s else (None, "গ্রেড/মূল বেতন অসম্পূর্ণ")
     return compute_extra(emp, run, settings)
 
@@ -181,6 +183,7 @@ def insert_slip(run_id, emp, s):
             emp["account_no"], json.dumps(s["other_allowance"], ensure_ascii=False),
             json.dumps(s["other_deduction"], ensure_ascii=False)] + [s.get(c) for c in SLIP_COLUMNS]
     get_db().execute(f"INSERT INTO payslips ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", vals)
+    record_loan_payments(run_id, emp["id"], s["other_deduction"])
 
 
 def regenerate_slip(run, slip_row):
@@ -201,3 +204,51 @@ def group_by_department(slips):
     for s in slips:
         groups.setdefault(s["department"] or "শাখা উল্লেখ নেই", []).append(s)
     return list(groups.items())
+
+
+# ---------------------------------------------------------------- ঋণের কিস্তি
+
+LOAN_KINDS = ["গৃহ নির্মাণ ঋণ", "ভবিষ্য তহবিল অগ্রিম", "অন্যান্য ঋণ", "মোটরসাইকেল ঋণ", "কম্পিউটার ঋণ"]
+
+
+def loan_progress(loan, exclude_run_id=None):
+    """পরিশোধিত (চূড়ান্ত শিটে কাটা + আগের) ও খসড়ায় থাকা কিস্তির সংখ্যা।"""
+    rows = get_db().execute(
+        "SELECT r.status, p.amount FROM loan_payments p JOIN payroll_runs r ON r.id = p.run_id "
+        "WHERE p.loan_id = ? AND p.run_id != ?", (loan["id"], exclude_run_id or 0)).fetchall()
+    final = sum(1 for r in rows if r["status"] == "final")
+    draft = sum(1 for r in rows if r["status"] != "final")
+    paid = loan["paid_before"] + final
+    total = loan["total_installments"]
+    return {"paid": paid, "draft": draft, "total": total,
+            "remaining": max(total - paid, 0) if total else None,
+            "remaining_amount": r2(max(total - paid, 0) * loan["installment"]) if total else None,
+            "done": bool(total) and paid >= total}
+
+
+def loan_deductions(emp, run):
+    """এই শিটে কাটার মতো ঋণের কিস্তি: [{name, amount, loan_id}]। মোট কিস্তি পূর্ণ হলে আর কাটে না।"""
+    out = []
+    ym = f"{run['year']:04d}-{run['month']:02d}"
+    for loan in get_db().execute("SELECT * FROM loans WHERE employee_id = ? AND status = 'active' ORDER BY id",
+                                 (emp["id"],)):
+        if loan["start_ym"] and loan["start_ym"] > ym:
+            continue
+        pr = loan_progress(loan, exclude_run_id=run["id"])
+        n = pr["paid"] + pr["draft"]  # এর আগের সব কিস্তি (চূড়ান্ত + অন্য খসড়া)
+        if pr["total"] and n >= pr["total"]:
+            continue
+        label = f"{loan['kind']} কিস্তি ({bn_num(n + 1)}" + (f"/{bn_num(pr['total'])})" if pr["total"] else ")")
+        out.append({"name": label, "amount": loan["installment"], "loan_id": loan["id"]})
+    return out
+
+
+def record_loan_payments(run_id, employee_id, other_deduction):
+    """শিটে বসানো কিস্তিগুলো loan_payments এ লেখা (আগেরগুলো মুছে)।"""
+    conn = get_db()
+    conn.execute("DELETE FROM loan_payments WHERE run_id = ? AND loan_id IN "
+                 "(SELECT id FROM loans WHERE employee_id = ?)", (run_id, employee_id))
+    for item in _items(other_deduction):
+        if item.get("loan_id"):
+            conn.execute("INSERT OR REPLACE INTO loan_payments (loan_id, run_id, amount) VALUES (?, ?, ?)",
+                         (item["loan_id"], run_id, item["amount"]))

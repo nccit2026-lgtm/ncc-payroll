@@ -231,7 +231,7 @@ def allowances_2026(b, g, emp, on):
     }
 
 
-OVERRIDABLE = ["house_rent", "medical", "education", "tiffin", "transport"]
+OVERRIDABLE = ["house_rent", "medical", "education", "tiffin", "transport", "mobile"]
 
 
 def month_components(emp, y, m):
@@ -250,8 +250,9 @@ def month_components(emp, y, m):
         a = allowances_2015(b0, g, emp) if (y, m) < (2028, 1) else allowances_2026(b, g, emp, first)
         sp = special(b0, special_rate(emp)) if (y, m) < (2026, 7) else 0
     for k in OVERRIDABLE:
-        if emp["ovr_" + k] is not None:
-            a[k] = emp["ovr_" + k]
+        ovr = emp["ovr_" + k] if ("ovr_" + k) in emp.keys() else None
+        if ovr is not None:
+            a[k] = ovr
     pf = r2(b * 0.10) if emp["pf"] else 0
     return {"basic": b, **a, "special": sp, "pf_office": pf, "pf_fund": pf, "pf_own": pf}, pl
 

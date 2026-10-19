@@ -370,7 +370,79 @@ def test_bonus_religion_filters_font():
     assert c.get("/static/fonts/noto-sans-bengali-bengali-400-normal.woff2").status_code == 200
 
 
+def test_loans_items_import():
+    import app as app_module
+    app_module.FAILED_LOGINS.clear()
+    app = create_app(os.path.join(tempfile.mkdtemp(), "l.db"))
+    c = app.test_client()
+    from db import get_db
+    post(c, "/login", {"username": "admin", "password": "admin123"})
+    post(c, "/password", {"old": "admin123", "new": "Admin#2026", "confirm": "Admin#2026"})
+    base = {"code": "", "inc_2026": "1", "inc_2027": "1", "tiffin": "1", "transport": "1", "department": "সাধারণ শাখা"}
+    post(c, "/admin/employees/new", {**base, "name_bn": "ক", "grade": "16", "basic": "10260", "pf": "1"})
+    post(c, "/admin/employees/new", {**base, "name_bn": "সচিব", "grade": "5", "basic": "63960", "ovr_mobile": "1500"})
+
+    # গৃহ ঋণ: মোট ৩ কিস্তি, আগে ১টি পরিশোধিত → অক্টোবর ২/৩, নভেম্বর ৩/৩, ডিসেম্বরে আর কাটা হবে না
+    post(c, "/admin/employees/1/loans", {"kind": "গৃহ নির্মাণ ঋণ", "installment": "2500", "total_installments": "3",
+                                         "paid_before": "1"})
+    for m in (10, 11, 12):
+        post(c, "/admin/payroll/new", {"kind": "salary", "year": "2026", "month": str(m)})
+        with app.app_context():
+            run_id = get_db().execute("SELECT id FROM payroll_runs WHERE month = ?", (m,)).fetchone()[0]
+        post(c, f"/admin/payroll/{run_id}/finalize")
+    with app.app_context():
+        ded = {r[0]: loads_(r[1]) for r in get_db().execute(
+            "SELECT r.month, p.other_deduction FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE p.employee_id = 1")}
+        assert [d["name"] for d in ded[10]] == ["গৃহ নির্মাণ ঋণ কিস্তি (২/৩)"]
+        assert [d["name"] for d in ded[11]] == ["গৃহ নির্মাণ ঋণ কিস্তি (৩/৩)"]
+        assert ded[12] == []
+        loan = get_db().execute("SELECT * FROM loans WHERE id = 1").fetchone()
+        from payroll import loan_progress
+        assert loan_progress(loan)["done"] and loan_progress(loan)["paid"] == 3
+        s = get_db().execute("SELECT * FROM payslips p JOIN payroll_runs r ON r.id = p.run_id WHERE r.month = 10 AND employee_id = 2").fetchone()
+        assert s["mobile"] == 1500  # নির্দিষ্ট মোবাইল ভাতা হুবহু
+    html = c.get("/admin/employees/1").get_data(as_text=True)
+    assert "সম্পন্ন" in html and "৩ / ৩ কিস্তি পরিশোধিত" in html
+
+    # খসড়া শিট মুছলে কিস্তি ফেরত যায়
+    post(c, "/admin/employees/2/loans", {"kind": "ভবিষ্য তহবিল অগ্রিম", "installment": "1000", "total_installments": "10"})
+    post(c, "/admin/payroll/new", {"kind": "salary", "year": "2027", "month": "1"})
+    with app.app_context():
+        jan = get_db().execute("SELECT id FROM payroll_runs WHERE year = 2027").fetchone()[0]
+        assert get_db().execute("SELECT COUNT(*) FROM loan_payments WHERE run_id = ?", (jan,)).fetchone()[0] == 1
+    post(c, f"/admin/payroll/{jan}/delete")
+    with app.app_context():
+        assert get_db().execute("SELECT COUNT(*) FROM loan_payments").fetchone()[0] == 2  # শুধু চূড়ান্ত শিটের দুটি
+
+    # ইমপোর্ট: অতিরিক্ত ভাতা, নির্দিষ্ট কর্তন, ঋণ
+    wb = load_workbook(io.BytesIO(c.get("/admin/employees/export.xlsx").data))
+    ws = wb.active
+    col = {f: i + 1 for i, f in enumerate(COLS)}
+    ws.cell(3, col["allow_items"], "ইন্টারনেট ও টেলিফোন ভাতা=2300; গাড়ি রক্ষণাবেক্ষণ ভাতা=25000")
+    ws.cell(3, col["ded_items"], "আয়কর=556")
+    ws.cell(3, col["loan2_inst"], 8036)
+    ws.cell(3, col["loan2_total"], 24)
+    ws.cell(3, col["loan2_paid"], 5)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    post(c, "/admin/employees/import", {"file": (buf, "e.xlsx")}, content_type="multipart/form-data")
+    with app.app_context():
+        items = [(r[0], r[1], r[2]) for r in get_db().execute("SELECT kind, name, amount FROM employee_items WHERE employee_id = 2 ORDER BY id")]
+        assert items == [("allowance", "ইন্টারনেট ও টেলিফোন ভাতা", 2300), ("allowance", "গাড়ি রক্ষণাবেক্ষণ ভাতা", 25000),
+                         ("deduction", "আয়কর", 556)]
+        other = get_db().execute("SELECT * FROM loans WHERE employee_id = 2 AND kind = 'অন্যান্য ঋণ'").fetchone()
+        assert (other["installment"], other["total_installments"], other["paid_before"]) == (8036, 24, 5)
+        assert get_db().execute("SELECT COUNT(*) FROM loans WHERE employee_id = 2").fetchone()[0] == 2
+
+
+def loads_(v):
+    import json
+    return json.loads(v)
+
+
 if __name__ == "__main__":
+    test_loans_items_import()
     test_full_flow()
     test_bonus_religion_filters_font()
     test_ids_separation_sheet_statement()

@@ -38,11 +38,12 @@
 {% endif %}
 {% include "_profile.html" %}
 {% include "_fixation.html" %}
+{% set editable = true %}{% include "_loans.html" %}
 
 <div id="salary">
   <div class="card">
     <h2>অতিরিক্ত ভাতা ও কর্তন</h2>
-    <p class="hint" style="margin-top:-8px">যেমন: দায়িত্ব ভাতা, মোবাইল ভাতা, গৃহ নির্মাণ ঋণের কিস্তি, আয়কর, কল্যাণ তহবিল। প্রতি মাসের বেতন শিটে স্বয়ংক্রিয়ভাবে বসবে।</p>
+    <p class="hint" style="margin-top:-8px">প্রতি মাসে একই অঙ্কে বসে — যেমন: দায়িত্ব ভাতা, গাড়ি রক্ষণাবেক্ষণ ভাতা, বাসা ভাড়া কর্তন, আয়কর। কিস্তির ঋণ (গৃহ ঋণ, ভবিষ্য তহবিল অগ্রিম) উপরের "ঋণ ও কিস্তি" অংশে দিন।</p>
     <table>
       <thead><tr><th>ধরন</th><th>বিবরণ</th><th class="num">টাকা</th><th></th></tr></thead>
       <tbody>
@@ -58,7 +59,7 @@
       <div class="field" style="flex:1;min-width:140px"><label>বিবরণ</label><input name="name" required list="item-names"></div>
       <div class="field" style="width:110px"><label>টাকা</label><input name="amount" inputmode="numeric" required></div>
       <button type="submit">যুক্ত করুন</button>
-      <datalist id="item-names"><option value="দায়িত্ব ভাতা"><option value="মোবাইল ভাতা"><option value="ধোলাই ভাতা"><option value="ঝুঁকি ভাতা"><option value="গৃহ নির্মাণ ঋণ কিস্তি"><option value="মোটরসাইকেল ঋণ কিস্তি"><option value="আয়কর"><option value="কল্যাণ তহবিল"><option value="যৌথ বীমা"><option value="জিপিএফ অগ্রিম কিস্তি"></datalist>
+      <datalist id="item-names"><option value="দায়িত্ব ভাতা"><option value="মোবাইল ভাতা"><option value="ধোলাই ভাতা"><option value="ঝুঁকি ভাতা"><option value="বাসা ভাড়া কর্তন"><option value="গাড়ি রক্ষণাবেক্ষণ ভাতা"><option value="ইন্টারনেট ও টেলিফোন ভাতা"><option value="আয়কর"><option value="কল্যাণ তহবিল"><option value="যৌথ বীমা"><option value="বিভিন্ন কর্তন"></datalist>
     </form>
   </div>
 </div>
