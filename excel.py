@@ -865,17 +865,17 @@ def clean_account(acc):
 
 
 def bank_of(account_no, bank_name, rules):
-    """হিসাব নম্বরের প্রথম অঙ্ক দিয়ে ব্যাংক; না মিললে কর্মচারীর তথ্যে লেখা ব্যাংকের নাম দিয়ে; তাও না হলে None।"""
-    acc = clean_account(account_no)
-    for name, prefixes in rules:
-        if acc and any(acc.startswith(p) for p in prefixes):
-            return name
+    """কর্মচারীর তথ্যে ব্যাংকের নাম দেওয়া থাকলে সেটি; না থাকলে হিসাব নম্বরের প্রথম অঙ্ক দিয়ে; তাও না মিললে None।"""
     given = (bank_name or "").lower()
     if given:
         for name, _ in rules:
             word = name.split()[0].split("-")[0].lower()
             if word in given or any(a in given for a in BANK_ALIASES.get(word, ())):
                 return name
+    acc = clean_account(account_no)
+    for name, prefixes in rules:
+        if acc and any(acc.startswith(p) for p in prefixes):
+            return name
     return None
 
 
