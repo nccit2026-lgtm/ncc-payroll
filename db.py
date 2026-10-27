@@ -14,6 +14,8 @@ DEFAULT_SETTINGS = {
     "accounts_officer_name": "",
     "accounts_officer_designation": "হিসাবরক্ষণ কর্মকর্তা",
     "boishakhi_pct": 20,
+    # ব্যাংক স্টেটমেন্ট: হিসাব নম্বরের প্রথম অঙ্ক দিয়ে ব্যাংক চেনা
+    "bank_rules": "সোনালী ব্যাংক=1; ডাচ-বাংলা ব্যাংক=3",
 }
 
 # পুরনো ডাটাবেসে নতুন কলাম যোগ (CREATE TABLE IF NOT EXISTS পুরনো টেবিল বদলায় না)

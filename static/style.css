@@ -221,3 +221,7 @@ table.st.wide th, table.st.wide td { font-size: .78rem; padding: 6px 4px; }
 table.st.wide th { white-space: normal; vertical-align: bottom; }
 .st-filter .chips .check { margin-right: 10px; }
 .chips .check { white-space: nowrap; }
+
+/* ব্যাংক স্টেটমেন্ট */
+.bank-card { margin-bottom: 18px; }
+.warn-row td { background: var(--warn-soft); }

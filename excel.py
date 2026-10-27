@@ -365,6 +365,15 @@ def _has(name, *words):
     return any(w in (name or "") for w in words)
 
 
+def ncc_groups(slips):
+    """নাসিক শিটের ক্রম: শীর্ষ কর্মকর্তা, তারপর অঞ্চল → শাখা।"""
+    top = [s for s in slips if is_top_officer(s)]
+    regions = {name: [] for name in REGIONS}
+    for dept, members in group_by_department([s for s in slips if not is_top_officer(s)]):
+        regions[region_of(dept)].append((dept, members))
+    return top, regions
+
+
 def ncc_breakdown(s):
     """একটি বেতন বিবরণীকে নাসিক শিটের কলামে ভাগ করা। কলামগুলোর যোগফল সবসময় মোট বেতন/মোট কর্তনের সমান।"""
     r2 = lambda x: round(float(x or 0), 2)  # noqa: E731
@@ -462,9 +471,7 @@ def _ncc_header(ws, r, cols, ded_from=None, pf_cols=None):
 def ncc_workbook(run, slips, settings, filter_label=""):
     """নাসিকের মাসিক বেতন শিট — অঞ্চল ও শাখাভিত্তিক বিস্তারিত, সারাংশ ও সারসংক্ষেপ নোট (সব বাংলায়)।"""
     period = f"{MONTHS_BN[run['month']]}'{bn_num(run['year'])} খ্রিঃ"
-    top = [s for s in slips if is_top_officer(s)]
-    rest = [s for s in slips if not is_top_officer(s)]
-    regions = {name: [] for name in REGIONS}
+    top, regions = ncc_groups(slips)
     bs = [ncc_breakdown(s) for s in slips]
     # কোন কলামে পয়সা আছে — শুধু সেখানেই যোগফলে দুই ঘর দশমিক
     det_keys = dict(zip("DEFGHIJKLMNOPQRSTUVW", [
@@ -476,8 +483,6 @@ def ncc_workbook(run, slips, settings, filter_label=""):
         keys = [k for L in letters for k in det_keys.get(L, [])]
         return MONEY_PAISA if any(_paisa(float(b[k])) for b in bs for k in keys) else MONEY
 
-    for dept, members in group_by_department(rest):
-        regions[region_of(dept)].append((dept, members))
 
     wb = Workbook()
     note = wb.active
@@ -831,4 +836,113 @@ def arrears_workbook(run, slips, settings, group=True, filter_label=""):
     ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     _bank_sheet(wb, slips, settings, f"ব্যাংক অ্যাডভাইস — {name} ({period})")
+    return _save(wb)
+
+
+# ---------------------------------------------------------------------------
+# ব্যাংক স্টেটমেন্ট — ব্যাংকভিত্তিক আলাদা ফাইল, বেতন শিটের মতো শাখাভিত্তিক
+# ---------------------------------------------------------------------------
+BANK_ALIASES = {"সোনালী": ("sonali",), "ডাচ": ("dutch", "dbbl", "ডাচ"), "জনতা": ("janata",), "অগ্রণী": ("agrani",),
+                "রূপালী": ("rupali",)}
+
+
+def parse_bank_rules(text):
+    """'সোনালী ব্যাংক=1; ডাচ-বাংলা ব্যাংক=3' → [(নাম, [উপসর্গ...])]"""
+    rules = []
+    for part in (text or "").split(";"):
+        if "=" in part:
+            name, prefixes = part.split("=", 1)
+            pre = [p.strip() for p in prefixes.split(",") if p.strip()]
+            if name.strip() and pre:
+                rules.append((name.strip(), pre))
+    return rules
+
+
+def clean_account(acc):
+    """হিসাব নম্বর থেকে ফাঁকা/ড্যাশ বাদ, বাংলা অঙ্ক ইংরেজিতে।"""
+    acc = str(acc or "").translate(str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789"))
+    return "".join(ch for ch in acc if ch.isalnum())
+
+
+def bank_of(account_no, bank_name, rules):
+    """হিসাব নম্বরের প্রথম অঙ্ক দিয়ে ব্যাংক; না মিললে কর্মচারীর তথ্যে লেখা ব্যাংকের নাম দিয়ে; তাও না হলে None।"""
+    acc = clean_account(account_no)
+    for name, prefixes in rules:
+        if acc and any(acc.startswith(p) for p in prefixes):
+            return name
+    given = (bank_name or "").lower()
+    if given:
+        for name, _ in rules:
+            word = name.split()[0].split("-")[0].lower()
+            if word in given or any(a in given for a in BANK_ALIASES.get(word, ())):
+                return name
+    return None
+
+
+def bank_statement_workbook(run, slips, settings, bank, period_label=None):
+    """একটি ব্যাংকের স্টেটমেন্ট: ক্রম, নাম, পদবি, হিসাব নম্বর, টাকা — শাখাভিত্তিক, শাখার মোট ও সর্বমোট।"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ব্যাংক স্টেটমেন্ট"
+    period = period_label or f"{MONTHS_BN[run['month']]} {bn_num(run['year'])}"
+    what = "মাসিক বেতন" if run["kind"] == "salary" else (run["title"] or "ভাতা")
+    heads = ["ক্রম", "নাম", "পদবি", "ব্যাংক হিসাব নম্বর", "টাকার পরিমাণ"]
+    n = len(heads)
+    for row, (text, size) in enumerate([(settings["office_name"], 15), (bank or "হিসাব নম্বর নেই / ব্যাংক অজানা", 13),
+                                         (f"{what} — {period}", 12)], 1):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=n)
+        _cell(ws, row, 1, text, bold=True, size=size, align="center", border=False)
+    _logo(ws, size=56)
+    ws.row_dimensions[1].height = 24
+    hr = 5
+    _header(ws, hr, heads)
+    paisa = any(_paisa(float(s["net"])) for s in slips)
+    fmt = MONEY_PAISA if paisa else MONEY
+    top, regions = ncc_groups(slips)
+    sections = ([(None, "শীর্ষ কর্মকর্তা", top)] if top else []) + \
+        [(region, dept, members) for region in REGIONS for dept, members in regions[region]]
+    r, serial, total_rows, last_region = hr, 0, [], None
+    for region, dept, members in sections:
+        if region and region != last_region and len(regions) > 1:
+            r += 1
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+            _cell(ws, r, 1, region, bold=True, size=12, border=False)
+        last_region = region or last_region
+        r += 1
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=n)
+        c = _cell(ws, r, 1, f"{dept}  ({bn_num(len(members))} জন)", bold=True, fill=DEPT_FILL)
+        c.font = Font(name=FONT, bold=True, size=11, color="1F5F4A")
+        first = r + 1
+        for s in members:
+            r += 1
+            serial += 1
+            _cell(ws, r, 1, serial, fmt=BN_INT, align="center")
+            _cell(ws, r, 2, s["name_bn"], wrap=True)
+            _cell(ws, r, 3, s["designation"], wrap=True)
+            # লেখা হিসেবে রাখা হয়, যাতে বড় নম্বর বা শুরুর শূন্য বদলে না যায়
+            _cell(ws, r, 4, str(s["account_no"] or ""), align="center").number_format = "@"
+            _cell(ws, r, 5, _v(s["net"]) or 0, fmt=fmt)
+        r += 1
+        for col in range(1, n + 1):
+            _cell(ws, r, col, fill=TOTAL_FILL, bold=True)
+        ws.cell(row=r, column=2, value="মোট")
+        _cell(ws, r, 5, f"=SUM(E{first}:E{r - 1})", bold=True, fill=TOTAL_FILL, fmt=fmt)
+        total_rows.append(r)
+    r += 2
+    for col in range(1, n + 1):
+        _cell(ws, r, col, fill=GRAND_FILL, bold=True, size=12)
+    ws.cell(row=r, column=2, value=f"সর্বমোট ({bn_num(serial)} জন)")
+    _cell(ws, r, 5, "=" + "+".join(f"E{x}" for x in total_rows) if total_rows else 0, bold=True, size=12,
+          fill=GRAND_FILL, fmt=fmt)
+    total = round(sum(float(s["net"]) for s in slips), 2)
+    ws.merge_cells(start_row=r + 2, start_column=1, end_row=r + 2, end_column=n)
+    _cell(ws, r + 2, 1, f"মোট {bn_num(serial)} জন, সর্বমোট {bn_taka(total)}/- টাকা।", size=11, border=False)
+    _signature(ws, r + 5, n, settings)
+    _widths(ws, [7, 30, 28, 24, 16])
+    ws.freeze_panes = f"A{hr + 1}"
+    ws.print_title_rows = f"{hr}:{hr}"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
     return _save(wb)

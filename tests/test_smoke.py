@@ -490,10 +490,10 @@ def test_ncc_format_excel():
     ws = wb.active
     col = {f: i + 1 for i, f in enumerate(COLS)}
     rows = [{"code": "N1", "name_bn": "সচিব সাহেব", "designation": "সচিব", "department": "সাধারণ শাখা", "grade": 5,
-             "basic": 66840, "ovr_mobile": 1500, "allow_items": "ইন্টারনেট ও টেলিফোন ভাতা=2300; গাড়ি রক্ষণাবেক্ষণ ভাতা=25000"},
+             "basic": 66840, "ovr_mobile": 1500, "account_no": "1234567890123", "allow_items": "ইন্টারনেট ও টেলিফোন ভাতা=2300; গাড়ি রক্ষণাবেক্ষণ ভাতা=25000"},
             {"code": "N2", "name_bn": "করিম", "designation": "অফিস সহায়ক", "department": "সাধারণ শাখা", "grade": 20,
              "basic": 9700, "pf": "হ্যাঁ", "ded_items": "আয়কর=500; বাসা ভাড়া কর্তন=6000; বিভিন্ন কর্তন=100",
-             "loan0_inst": 2500, "loan1_inst": 1000, "loan2_inst": 800},
+             "loan0_inst": 2500, "loan1_inst": 1000, "loan2_inst": 800, "account_no": "301-7788-99"},
             {"code": "N3", "name_bn": "রহিম", "designation": "পরিচ্ছন্নতা পরিদর্শক", "grade": 16, "basic": 9700,
              "department": "বর্জ্য ব্যবস্থাপনা বিভাগ (সিদ্ধিরগঞ্জ অঞ্চল)"}]
     for i, row in enumerate(rows, 2):
@@ -522,6 +522,22 @@ def test_ncc_format_excel():
     assert det.cell(karim, 23).value == f"=M{karim}-V{karim}"
     simple = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{run_id}/excel?fmt=simple").data))
     assert simple.sheetnames[0] == "বেতন শিট"
+
+    # ব্যাংক স্টেটমেন্ট: ১ দিয়ে শুরু = সোনালী, ৩ = ডাচ-বাংলা, নম্বর নেই = আলাদা ফাইল; একসাথে zip
+    html = c.get(f"/admin/payroll/{run_id}").get_data(as_text=True)
+    assert "সব ব্যাংকের স্টেটমেন্ট একসাথে" in html and "হিসাব নম্বর নেই / ব্যাংক চেনা যায়নি" in html
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(c.get(f"/admin/payroll/{run_id}/bank-statement?bank=all").data))
+    names = z.namelist()
+    assert len(names) == 3 and "সোনালী-ব্যাংক" in names[0] and "ডাচ-বাংলা-ব্যাংক" in names[1] and "হিসাব-নম্বর-নেই" in names[2]
+    son = load_workbook(io.BytesIO(z.read(names[0]))).active
+    vals = [[cell.value for cell in row] for row in son.iter_rows()]
+    assert vals[4] == ["ক্রম", "নাম", "পদবি", "ব্যাংক হিসাব নম্বর", "টাকার পরিমাণ"] and vals[1][0] == "সোনালী ব্যাংক"
+    flat = [v for row in vals for v in row]
+    assert "সচিব সাহেব" in flat and "1234567890123" in flat and "করিম" not in flat
+    dbbl = load_workbook(io.BytesIO(c.get(f"/admin/payroll/{run_id}/bank-statement?bank=1").data)).active
+    flat = [cell.value for row in dbbl.iter_rows() for cell in row]
+    assert "করিম" in flat and "301-7788-99" in flat and "সাধারণ শাখা  (১ জন)" in flat
 
 
 def test_manual_past_month_entry():

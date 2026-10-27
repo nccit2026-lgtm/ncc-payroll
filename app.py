@@ -1,9 +1,11 @@
+import io
 import json
 import math
 import os
 import re
 import secrets
 import time
+import zipfile
 from datetime import date, datetime, timedelta
 from functools import wraps
 
@@ -263,6 +265,21 @@ def run_totals(kind=None):
            FROM payroll_runs r LEFT JOIN payslips p ON p.run_id = r.id
            WHERE (? IS NULL OR r.kind = ?) AND r.manual = 0
            GROUP BY r.id ORDER BY r.year, r.month, r.id""", (kind, kind)).fetchall()
+
+
+def bank_groups(run, slips):
+    """ব্যাংক অনুযায়ী ভাগ: [(ব্যাংক, বিবরণী)], শেষে (None, হিসাব নম্বর নেই/অজানা)। খসড়া শিটে কর্মচারীর বর্তমান
+    হিসাব নম্বর, চূড়ান্ত শিটে শিটের সময়ের নম্বর (খালি থাকলে বর্তমানটি)।"""
+    rules = excel.parse_bank_rules(get_settings().get("bank_rules"))
+    emps = {e["id"]: e for e in get_db().execute("SELECT id, account_no, bank_name FROM employees")}
+    groups = {name: [] for name, _ in rules}
+    groups[None] = []
+    for s in slips:
+        e = emps.get(s["employee_id"]) or {}
+        acc = (e["account_no"] if e and (run["status"] == "draft" or not s["account_no"]) else s["account_no"]) or ""
+        row = dict(s, account_no=acc)
+        groups[excel.bank_of(acc, e["bank_name"] if e else None, rules)].append(row)
+    return [(k, v) for k, v in groups.items() if v or k is not None]
 
 
 def get_run_or_404(run_id):
@@ -920,7 +937,8 @@ def register_routes(app):
     @admin_required
     def payscale_page():
         if request.method == "POST":
-            for key in ["office_name", "office_address", "accounts_officer_name", "accounts_officer_designation"]:
+            for key in ["office_name", "office_address", "accounts_officer_name", "accounts_officer_designation",
+                        "bank_rules"]:
                 save_setting(key, request.form.get(key, "").strip())
             for key in ["festival_pct", "boishakhi_pct"]:
                 save_setting(key, to_float(request.form.get(key)))
@@ -1043,7 +1061,8 @@ def register_routes(app):
         grouped = group_by_department(slips) if fs["group"] else [(None, slips)]
         groups = [(d, g, {f: round(sum(s[f] for s in g), 2) for f in ["gross", "total_deduction", "net"]})
                   for d, g in grouped]
-        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing,
+        banks = [(b, len(rows), round(sum(r["net"] for r in rows), 2)) for b, rows in bank_groups(run, slips)]
+        return render_template("admin/payroll_view.html", run=run, slips=slips, totals=totals, missing=missing, banks=banks,
                                groups=groups, prev_net=prev["net"] if prev and run["kind"] == "salary" else 0,
                                on_prl=on_prl, fs=fs, query=request.query_string.decode())
 
@@ -1064,6 +1083,35 @@ def register_routes(app):
         return xlsx_response(excel.payroll_workbook(run, fs["slips"], get_settings(), group=fs["group"],
                                                     filter_label=fs["filter_label"]),
                              f"{name}-{run['year']}-{run['month']:02d}{'-list' if run['kind'] == 'salary' else ''}.xlsx")
+
+    @app.route("/admin/payroll/<int:run_id>/bank-statement")
+    @admin_required
+    def bank_statement(run_id):
+        """ব্যাংক স্টেটমেন্ট: bank=all → সব ব্যাংকের আলাদা Excel একসাথে (zip); bank=০,১… → একটি ব্যাংকের Excel।"""
+        run = get_run_or_404(run_id)
+        groups = bank_groups(run, filtered_slips(run_id, request.args)["slips"])
+        settings = get_settings()
+        ym = f"{run['year']}-{run['month']:02d}"
+        label = f"{MONTHS_BN[run['month']]}-{bn_num(run['year'])}"
+        what = "বেতন" if run["kind"] == "salary" else (run["title"] or "ভাতা")
+
+        def fname(bank):
+            return f"{what}-{bank or 'হিসাব নম্বর নেই'}-{label}.xlsx".replace(" ", "-").replace("/", "-")
+
+        pick = request.args.get("bank", "all")
+        if pick != "all":
+            i = to_int(pick, -1)
+            if not 0 <= i < len(groups):
+                abort(404)
+            bank, rows = groups[i]
+            return xlsx_response(excel.bank_statement_workbook(run, rows, settings, bank), fname(bank))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for bank, rows in groups:
+                if rows:
+                    z.writestr(fname(bank), excel.bank_statement_workbook(run, rows, settings, bank).getvalue())
+        buf.seek(0)
+        return send_file(buf, as_attachment=True, download_name=f"bank-statement-{ym}.zip", mimetype="application/zip")
 
     @app.route("/admin/payroll/<int:run_id>/finalize", methods=["POST"])
     @admin_required

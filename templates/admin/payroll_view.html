@@ -25,6 +25,23 @@
   </div>
 </div>
 
+<div class="card bank-card">
+  <div class="topbar" style="margin-bottom:8px"><h2 style="margin:0">ব্যাংক স্টেটমেন্ট</h2>
+    <a class="btn primary" href="{{ url_for('bank_statement', run_id=run.id) }}?bank=all{{ '&' ~ query if query }}" title="প্রতিটি ব্যাংকের আলাদা Excel ফাইল একটি zip এ — ক্রম, নাম, পদবি, হিসাব নম্বর, টাকা; শাখাভিত্তিক">সব ব্যাংকের স্টেটমেন্ট একসাথে (ZIP)</a></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>ব্যাংক</th><th class="num">কর্মচারী</th><th class="num">টাকা</th><th></th></tr></thead>
+    <tbody>
+    {% for bank, n, amount in banks %}
+      <tr{% if not bank %} class="warn-row"{% endif %}><td>{% if bank %}<b>{{ bank }}</b>{% else %}<b>হিসাব নম্বর নেই / ব্যাংক চেনা যায়নি</b>
+          <div class="hint">কর্মচারীর তথ্যে সঠিক হিসাব নম্বর দিন{% if draft %}, তারপর এখানে আবার দেখুন{% else %} (চূড়ান্ত শিটে খালি নম্বরের জায়গায় বর্তমান নম্বর বসে){% endif %}</div>{% endif %}</td>
+        <td class="num">{{ n|bn }}</td><td class="num">{{ amount|taka }}</td>
+        <td>{% if n %}<a class="btn sm" href="{{ url_for('bank_statement', run_id=run.id) }}?bank={{ loop.index0 }}{{ '&' ~ query if query }}">Excel</a>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="hint" style="margin:8px 0 0">হিসাব নম্বরের প্রথম অঙ্ক দিয়ে ব্যাংক চেনা হয় ({{ settings.bank_rules }}) — পরিবর্তন: বেতন স্কেল ও ভাতা → অফিস ও অন্যান্য সেটিং।</p>
+</div>
+
 <div class="grid g4" style="margin-bottom:18px">
   <div class="stat"><div class="label">{{ 'মোট বেতন' if salary else 'মোট ভাতা' }}</div><div class="value">৳ {{ totals.gross|taka }}</div></div>
   <div class="stat"><div class="label">মোট কর্তন</div><div class="value">৳ {{ totals.total_deduction|taka }}</div></div>
